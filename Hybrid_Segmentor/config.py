@@ -10,7 +10,7 @@ import os
 NUM_EPOCHS = 50
 DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24}
 # dataset = os.path.join('../', 'sample_dataset/') # or split_dataset_final
-dataset = "/kaggle/input/masonry-dataset"
+dataset = "/kaggle/input/masonry-dataset/"
 
 # Hyperparameters etc.
 LEARNING_RATE = 1e-4

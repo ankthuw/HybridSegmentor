@@ -8,7 +8,7 @@ import os
 
 ### train on sample dataset
 NUM_EPOCHS = 50
-DATASET_SIZE = {'train' : 360, 'val' : 120, 'test' : 120}
+DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24}
 # dataset = os.path.join('../', 'sample_dataset/') # or split_dataset_final
 dataset = "/kaggle/input/masonry-dataset"
 

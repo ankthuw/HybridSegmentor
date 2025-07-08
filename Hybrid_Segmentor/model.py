@@ -16,7 +16,8 @@ from metric import DiceBCELoss, DiceLoss
 import torchmetrics
 from torchmetrics.classification \
     import BinaryJaccardIndex, BinaryRecall, BinaryAccuracy, \
-        BinaryPrecision, BinaryF1Score, Dice
+        BinaryPrecision, BinaryF1Score
+from torchmetrics.classification import BinaryDiceCoefficient as Dice
 import numpy as np
 
 

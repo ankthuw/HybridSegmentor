@@ -8,7 +8,8 @@ import os
 
 ### train on sample dataset
 NUM_EPOCHS = 50
-DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24}
+# DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24} # masonry
+DATASET_SIZE = {'train' : 3300, 'val' : 525, 'test' : 530} # steelcrack
 # dataset = os.path.join('../', 'sample_dataset/') # or split_dataset_final
 dataset = "/kaggle/input/steelcrack/Steelcrack"
 

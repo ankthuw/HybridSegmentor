@@ -9,9 +9,11 @@ import os
 ### train on sample dataset
 NUM_EPOCHS = 50
 # DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24} # masonry
-DATASET_SIZE = {'train' : 3300, 'val' : 525, 'test' : 530} # steelcrack
+# DATASET_SIZE = {'train' : 3300, 'val' : 525, 'test' : 530} # steelcrack
+DATASET_SIZE = {'train' : 94, 'val' : 11, 'test' : 13} # cfd dataset
 # dataset = os.path.join('../', 'sample_dataset/') # or split_dataset_final
-dataset = "/kaggle/input/steelcrack/Steelcrack/"
+# dataset = "/kaggle/input/steelcrack/Steelcrack/"
+dataset = "/kaggle/input/cfd-dataset/CFD_split/"
 
 # Hyperparameters etc.
 LEARNING_RATE = 1e-4

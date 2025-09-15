@@ -24,7 +24,8 @@ def main():
 
     print('Loading Model')
 
-    ck_file_path = r'../checkpoints/hybrid_segmentor_BCE_2.ckpt'
+    # ck_file_path = r'../checkpoints/hybrid_segmentor_BCE_2.ckpt'
+    ck_file_path = "/kaggle/input/hybrid-checkpoints/checkpoints/hybrid_segmentor_BCE_2.ckpt"
     checkpoint = torch.load(ck_file_path)
     model.load_state_dict(checkpoint['state_dict'])
     mul_outputs = True

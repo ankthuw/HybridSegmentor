@@ -26,6 +26,7 @@ IMAGE_HEIGHT = 256
 IMAGE_WIDTH = 256
 PIN_MEMORY = True
 LOAD_MODEL = False
+
 # Dataset dir
 TRAIN_IMG_DIR = dataset+"train/IMG"
 TRAIN_MASK_DIR = dataset+"train/GT"
@@ -33,3 +34,6 @@ VAL_IMG_DIR = dataset+"val/IMG"
 VAL_MASK_DIR = dataset+"val/GT"
 TEST_IMG_DIR = dataset+"test/IMG"
 TEST_MASK_DIR = dataset+"test/GT"
+
+# checkpoint
+CHECKPOINTS_PATH = "/kaggle/input/hybrid-checkpoints/checkpoints/hybrid_segmentor_BCE_2.ckpt"

@@ -8,13 +8,13 @@ import os
 
 ### train on total dataset
 NUM_EPOCHS = 100
-# DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24} # masonry
-DATASET_SIZE = {'train' : 3484, 'val' : 435, 'test' : 436} # steelcrack
+DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24} # masonry
+# DATASET_SIZE = {'train' : 3484, 'val' : 435, 'test' : 436} # steelcrack
 # DATASET_SIZE = {'train' : 3782, 'val' : 472, 'test' : 474} # pavement
 
 # dataset = os.path.join('../', 'sample_dataset/') # or split_dataset_final
-# dataset = "/kaggle/input/masonry/MASONRY/"
-dataset = "/kaggle/input/steels/STEELS/"
+dataset = "/kaggle/input/masonry/MASONRY/"
+# dataset = "/kaggle/input/steels/STEELS/"
 # dataset = "/kaggle/input/pavement/PAVEMENT/"
 
 # Hyperparameters etc.

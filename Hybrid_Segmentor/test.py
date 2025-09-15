@@ -48,16 +48,10 @@ def main():
     
     
     ###############################
-    print('-----------------------------')
-    print('Computing ODS')
-    eval_ODS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
-    print('-----------------------------')
-    print('Computing OIS')
-    eval_OIS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
+    # print('-----------------------------')
+    # print('Computing ODS')
+    # eval_ODS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
     ###############################
-
-
-
 
 
 if __name__ == "__main__":

@@ -6,14 +6,16 @@ import os
 # DATASET_SIZE = {'train' : 9600, 'val' : 1200, 'test' : 1200}
 # dataset = os.path.join('../', 'split_dataset_final/')
 
-### train on sample dataset
-NUM_EPOCHS = 50
+### train on total dataset
+NUM_EPOCHS = 100
 # DATASET_SIZE = {'train' : 192, 'val' : 24, 'test' : 24} # masonry
 # DATASET_SIZE = {'train' : 3300, 'val' : 525, 'test' : 530} # steelcrack
-DATASET_SIZE = {'train' : 94, 'val' : 11, 'test' : 13} # cfd dataset
+
+DATASET_SIZE = {'train' : 3782, 'val' : 472, 'test' : 474} # pavement
+
 # dataset = os.path.join('../', 'sample_dataset/') # or split_dataset_final
 # dataset = "/kaggle/input/steelcrack/Steelcrack/"
-dataset = "/kaggle/input/cfd-dataset/CFD_split/"
+dataset = "/kaggle/input/pavement/PAVEMENT/"
 
 # Hyperparameters etc.
 LEARNING_RATE = 1e-4

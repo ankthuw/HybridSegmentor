@@ -24,17 +24,18 @@ def main():
 
     print('Loading Model')
 
-    ck_file_path = r'/trinity/home/jmohgoo/data/junegoo/model/v7_resnet/checkpoints/v7_RECALL_final/best.ckpt'
+    ck_file_path = r'../checkpoints/hybrid_segmentor_BCE_2.ckpt'
     checkpoint = torch.load(ck_file_path)
     model.load_state_dict(checkpoint['state_dict'])
     mul_outputs = True
     mode = 'test'
 
-
-    # print()
-    # print('Computing Metrics')
-    # eval_metrics(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
-    # print('-----------------------------')
+    ###############################
+    print()
+    print('Computing Metrics')
+    eval_metrics(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
+    print('-----------------------------')
+    ###############################
 
     print('Saving Images')
     file_name = 'RECALL_outputs'
@@ -45,13 +46,14 @@ def main():
     print('Saved all images')
     
     
-    
-    # print('-----------------------------')
-    # print('Computing ODS')
-    # eval_ODS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
-    # print('-----------------------------')
-    # print('Computing OIS')
-    # eval_OIS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
+    ###############################
+    print('-----------------------------')
+    print('Computing ODS')
+    eval_ODS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
+    print('-----------------------------')
+    print('Computing OIS')
+    eval_OIS(loader=dataloaders[mode], model=model, multiple_outputs=mul_outputs)
+    ###############################
 
 
 

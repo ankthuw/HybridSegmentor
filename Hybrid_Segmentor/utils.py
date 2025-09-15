@@ -2,6 +2,7 @@ import torch
 import torchvision
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 result_save_ind = 0
 threshold = 0.5
@@ -155,8 +156,17 @@ def eval_ODS(loader, model, device="cuda", multiple_outputs=False):
 
 def save_predictions_as_imgs(loader, model, folder="saved_images/", device="cuda", multiple_outputs=False):
     model.eval()
+    
+    # get dataset from loader
+    dataset = loader.dataset
+    
     for idx, (x, y) in enumerate(loader):
         x = x.to(device=device)
+        
+        # get original name
+        original_filename = dataset.images[idx]
+        base_name = os.path.splitext(original_filename)[0]
+        
         with torch.no_grad():
             if multiple_outputs == True:
                 final_output = model(x)[result_save_ind]
@@ -166,10 +176,17 @@ def save_predictions_as_imgs(loader, model, folder="saved_images/", device="cuda
             else:
                 preds_probability = torch.sigmoid(model(x))
                 preds = (preds_probability > threshold).float()
-        torchvision.utils.save_image(preds, f"{folder}/pred_{idx}.png")
-        torchvision.utils.save_image(y.unsqueeze(1), f"{folder}{idx}.png")
+        # torchvision.utils.save_image(preds, f"{folder}/pred_{idx}.png")
+        # torchvision.utils.save_image(y.unsqueeze(1), f"{folder}{idx}.png")
+        
+        pred_filename = f"{folder}/pred_{base_name}.png"
+        gt_filename = f"{folder}/gt_{base_name}.png"
+        
+        torchvision.utils.save_image(preds, pred_filename)
+        torchvision.utils.save_image(y.unsqueeze(1), gt_filename)
 
     model.train()
+    print(f"Saved all image with original names to {folder}")
 
 
 

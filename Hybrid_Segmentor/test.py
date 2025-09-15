@@ -25,7 +25,7 @@ def main():
     print('Loading Model')
 
     # ck_file_path = r'../checkpoints/hybrid_segmentor_BCE_2.ckpt'
-    ck_file_path = CHECKPOINTS_PATH
+    ck_file_path = config.CHECKPOINTS_PATH
     checkpoint = torch.load(ck_file_path)
     model.load_state_dict(checkpoint['state_dict'])
     mul_outputs = True

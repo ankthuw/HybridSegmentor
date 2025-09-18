@@ -185,12 +185,87 @@ class ResNetEncoder(nn.Module):
         output5 = self.encoder5(output4)
 
         return output1, output2, output3, output4, output5
-    
+
+class ChannelPool(nn.Module):
+    def forward(self, x):
+        return torch.cat( (torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1)
+
+class Conv(nn.Module):
+    def __init__(self, inp_dim, out_dim, kernel_size=3, stride=1, bn=False, relu=True, bias=True):
+        super(Conv, self).__init__()
+        self.inp_dim = inp_dim
+        self.conv = nn.Conv2d(inp_dim, out_dim, kernel_size, stride, padding=(kernel_size-1)//2, bias=bias)
+        self.relu = None
+        self.bn = None
+        if relu:
+            self.relu = nn.ReLU(inplace=True)
+        if bn:
+            self.bn = nn.BatchNorm2d(out_dim)
+
+    def forward(self, x):
+        assert x.size()[1] == self.inp_dim, "{} {}".format(x.size()[1], self.inp_dim)
+        x = self.conv(x)
+        if self.bn is not None:
+            x = self.bn(x)
+        if self.relu is not None:
+            x = self.relu(x)
+        return x
+class BiFusion_block(nn.Module):
+    def __init__(self, ch_1, ch_2, r_2, ch_int, ch_out, drop_rate=0.):
+        super(BiFusion_block, self).__init__()
+
+        # Channel attention for transformer features
+        self.fc1 = nn.Conv2d(ch_2, ch_2 // r_2, kernel_size=1)
+        self.relu = nn.ReLU(inplace=True)
+        self.fc2 = nn.Conv2d(ch_2 // r_2, ch_2, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+
+        # Spatial attention for CNN features
+        self.compress = ChannelPool()
+        self.spatial = Conv(2, 1, 7, bn=True, relu=False, bias=False)
+
+        # Bi-linear modeling
+        self.W_g = Conv(ch_1, ch_int, 1, bn=True, relu=False)
+        self.W_x = Conv(ch_2, ch_int, 1, bn=True, relu=False)
+        self.W = Conv(ch_int, ch_int, 3, bn=True, relu=True)
+
+        self.residual = Conv(ch_1+ch_2+ch_int, ch_out, 1)
+        self.dropout = nn.Dropout2d(drop_rate)
+
+    def forward(self, g, x):
+        # Bilinear pooling
+        W_g = self.W_g(g)
+        W_x = self.W_x(x)
+        bp = self.W(W_g * W_x)
+
+        # Spatial attention for CNN
+        g_in = g
+        g = self.compress(g)
+        g = self.spatial(g)
+        g = self.sigmoid(g) * g_in
+
+        # Channel attention for transformer
+        x_in = x
+        x = x.mean((2, 3), keepdim=True)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x) * x_in
+
+        fuse = self.residual(torch.cat([g, x, bp], 1))
+        return self.dropout(fuse)
+
 class HybridSegmentor(pl.LightningModule):
     def __init__(self, channels=3, dims=(64, 256, 512, 1024), n_heads=(1, 2, 8, 8), expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), learning_rate = config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()
         self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
         self.to_segment_conv = nn.Conv2d(5, 1, 1)
+
+        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=64, ch_out=64)
+        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=256, ch_out=256)
+        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)
+        self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=1024, ch_out=1024)
+
 
         self.reduce_channels_1 = DoubleConv(dims[0]*2, dims[0])
         self.reduce_channels_2 = DoubleConv(dims[1]*2, dims[1])
@@ -230,10 +305,10 @@ class HybridSegmentor(pl.LightningModule):
         mit_1, mit_2, mit_3, mit_4 = self.mix_transformer(x)
         output1, output2, output3, output4, side_output5 = self.cnn_encoder(x)
 
-        side_output1 = torch.concat((mit_1, output1), dim=1)
-        side_output2 = torch.concat((mit_2, output2), dim=1)
-        side_output3 = torch.concat((mit_3, output3), dim=1)
-        side_output4 = torch.concat((mit_4, output4), dim=1)
+        side_output1 = self.fusion1(output1, mit_1)
+        side_output2 = self.fusion2(output2, mit_2)
+        side_output3 = self.fusion3(output3, mit_3)
+        side_output4 = self.fusion4(output4, mit_4)
 
         up_side_1 = self.upsampling_1(self.reduce_channels_1(side_output1))
         up_side_2 = self.upsampling_2(self.reduce_channels_2(side_output2))

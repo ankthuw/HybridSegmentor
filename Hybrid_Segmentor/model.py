@@ -256,33 +256,38 @@ class BiFusion_block(nn.Module):
         return self.dropout(fuse)
 
 class HybridSegmentor(pl.LightningModule):
-    def __init__(self, channels=3, dims=(64, 256, 512, 1024), n_heads=(1, 2, 8, 8), expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), learning_rate = config.LEARNING_RATE):
+    def __init__(self, channels=3, dims=(64, 256, 512, 1024), n_heads=(1, 2, 8, 8), 
+                 expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), 
+                 learning_rate=config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()
+        
+        # Keep MiT and CNN encoders
         self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
-        self.to_segment_conv = nn.Conv2d(5, 1, 1)
+        self.cnn_encoder = ResNetEncoder()
 
-        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=64, ch_out=64)
-        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=256, ch_out=256)
-        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)
+        # BiFusion blocks - channels match the feature maps
+        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=64, ch_out=64)        
+        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=256, ch_out=256)    
+        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)    
         self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=1024, ch_out=1024)
 
+        # Reduce channels after fusion - input channels should match fusion output
+        self.reduce_channels_1 = DoubleConv(64, 32)      
+        self.reduce_channels_2 = DoubleConv(256, 64)     
+        self.reduce_channels_3 = DoubleConv(512, 128)   
+        self.reduce_channels_4 = DoubleConv(1024, 256)   
+        self.reduce_channels_5 = DoubleConv(2048, 256)   
 
-        self.reduce_channels_1 = DoubleConv(dims[0]*2, dims[0])
-        self.reduce_channels_2 = DoubleConv(dims[1]*2, dims[1])
-        self.reduce_channels_3 = DoubleConv(dims[2]*2, dims[2])
-        self.reduce_channels_4 = DoubleConv(dims[3]*2, dims[3])
-        self.reduce_channels_5 = DoubleConv(dims[3]*2, dims[3])
+        # Upsampling with reduced channels
+        self.upsampling_1 = conv_upsample(2, 32, 1)    
+        self.upsampling_2 = conv_upsample(4, 64, 1)    
+        self.upsampling_3 = conv_upsample(8, 128, 1)   
+        self.upsampling_4 = conv_upsample(16, 256, 1)  
+        self.upsampling_5 = conv_upsample(32, 256, 1)  
 
-        self.upsampling_1 = conv_upsample(2, 64, 1)
-        self.upsampling_2 = conv_upsample(4, 256, 1)
-        self.upsampling_3 = conv_upsample(8, 512, 1)
-        self.upsampling_4 = conv_upsample(16, 1024, 1)
-        self.upsampling_5 = conv_upsample(32, 1024, 1)
-
-        self.cnn_encoder = ResNetEncoder()
-        self.weight = 0.7
-
-
+        # Final 1x1 conv to combine all features
+        self.to_segment_conv = nn.Conv2d(5, 1, 1)  # Combine 5 upsampled features
+        
         # loss function
         self.loss_fn = DiceBCELoss()
         # self.loss_fn = Dice()

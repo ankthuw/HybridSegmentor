@@ -20,6 +20,8 @@ def generate_gradcam_cnn(model, input_tensor, target_layer_name='encoder5', clas
         heatmap: numpy array (H, W)
     """
     model.eval()
+    device = next(model.parameters()).device
+    input_tensor = input_tensor.to(device)
     cnn_encoder = model.cnn_encoder
     feature_maps = None
     gradients = None
@@ -78,6 +80,8 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=3):
         heatmap: numpy array (H, W)
     """
     model.eval()
+    device = next(model.parameters()).device
+    input_tensor = input_tensor.to(device)
     transformer = model.mix_transformer
     attn_weights = []
 

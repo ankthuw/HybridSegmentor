@@ -91,7 +91,7 @@ class EfficientMSA(nn.Module):
 
     def forward(self, x):
         n, c, h, w = x.shape
-        LN = LayerNorm2d(c).to(device=DEVICE)
+        LN = LayerNorm2d(c).to(x.device)
         x = LN(x)
         reshaped_k = self.reshaping_k(x)
         reshaped_v = self.reshaping_v(x)
@@ -117,7 +117,7 @@ class MixFFN(nn.Module):
         )
     def forward(self, x):
         n, c, h, w = x.shape
-        LN = LayerNorm2d(c).to(device=DEVICE)
+        LN = LayerNorm2d(c).to(x.device)
         x = LN(x)
         x = self.mixffn(x)
         return x

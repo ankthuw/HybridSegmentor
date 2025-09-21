@@ -85,22 +85,33 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=3):
     transformer = model.mix_transformer
     attn_weights = []
 
+    # Kiểm tra số lượng stage
+    if target_stage >= len(transformer.stages):
+        raise ValueError(f"target_stage={target_stage} vượt quá số stage ({len(transformer.stages)}) trong mô hình.")
+    stage = transformer.stages[target_stage][1]  # layers
+    if len(stage) == 0:
+        raise ValueError(f"Stage {target_stage} không có block nào.")
+
     # Hook để lấy attention weights từ EfficientMSA
     def get_attention_hook(module, input, output):
-        # output_weights shape: (B, N, N)
         attn = module.attention(input[0], input[1], input[2])[1]  # chỉ lấy weights
         attn_weights.append(attn.detach().cpu())
 
-    # Đăng ký hook cho các EfficientMSA trong stage target_stage
-    stage = transformer.stages[target_stage][1]  # layers
     handles = []
     for block in stage:
+        if len(block) == 0:
+            continue
         msa = block[0]
         handle = msa.register_forward_hook(get_attention_hook)
         handles.append(handle)
 
     # Forward
     _ = model.mix_transformer(input_tensor)
+
+    if len(attn_weights) == 0:
+        for handle in handles:
+            handle.remove()
+        raise RuntimeError(f"Không thu được attention weights từ stage {target_stage}. Kiểm tra lại mô hình hoặc input.")
 
     # Rollout: multiply attention qua các layer
     rollout = torch.eye(attn_weights[0].shape[-1])
@@ -110,7 +121,6 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=3):
         attn = attn / attn.sum(dim=-1, keepdim=True)
         rollout = attn @ rollout
     mask = rollout[0, 1:]  # bỏ token đầu nếu có, lấy attention tới các patch
-    # Chuyển mask về map 2D
     h = w = int(mask.shape[0] ** 0.5)
     heatmap = mask.reshape(h, w).numpy()
     heatmap = np.maximum(heatmap, 0)

@@ -99,9 +99,9 @@ class EfficientMSA(nn.Module):
         reshaped_v = rearrange(reshaped_v, "b c h w -> b (h w) c") # reshape (batch, sequence_length, channels) for attention
         q = rearrange(x, "b c h w -> b (h w) c")
         output, output_weights = self.attention(q, reshaped_k, reshaped_v)
-        self.last_attn_weights = output_weights
+        self.last_attn_weights = output_weights  # Lưu lại attention weights cho visualization
+        
         output = rearrange(output, "b (h w) c -> b c h w", h=h, w=w)
-
         return output
 
 

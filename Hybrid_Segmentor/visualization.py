@@ -94,8 +94,10 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=3):
 
     # Hook để lấy attention weights từ EfficientMSA
     def get_attention_hook(module, input, output):
-        attn = module.last_attn_weights  # (B, num_heads, N, N)
-        attn_weights.append(attn.detach().cpu())
+        if hasattr(module, 'last_attn_weights') and module.last_attn_weights is not None:
+            attn = module.last_attn_weights
+            if isinstance(attn, torch.Tensor) and attn.ndim >= 2:
+                attn_weights.append(attn.detach().cpu())
 
     handles = []
     for block in stage:

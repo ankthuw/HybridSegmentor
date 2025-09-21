@@ -69,13 +69,13 @@ def generate_gradcam_cnn(model, input_tensor, target_layer_name='encoder5', clas
 
 # Attention rollout cho Transformer
 
-def generate_attention_rollout_transformer(model, input_tensor, target_stage=3):
+def generate_attention_rollout_transformer(model, input_tensor, target_stage=None):
     """
     Sinh attention rollout heatmap cho nhánh Transformer (MiT)
     Args:
         model: mô hình HybridSegmentor
         input_tensor: tensor ảnh đầu vào (1, C, H, W)
-        target_stage: index stage trong MiT (0-3)
+        target_stage: index stage trong MiT (0-3), nếu None sẽ tự chọn stage cuối có block
     Returns:
         heatmap: numpy array (H, W)
     """
@@ -85,7 +85,16 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=3):
     transformer = model.mix_transformer
     attn_weights = []
 
-    # Kiểm tra số lượng stage
+    # Tìm stage cuối cùng có block nếu target_stage=None
+    if target_stage is None:
+        for i in reversed(range(len(transformer.stages))):
+            stage = transformer.stages[i][1]
+            if len(stage) > 0:
+                target_stage = i
+                break
+        if target_stage is None:
+            raise RuntimeError("Không tìm thấy stage nào có block trong Transformer.")
+
     if target_stage >= len(transformer.stages):
         raise ValueError(f"target_stage={target_stage} vượt quá số stage ({len(transformer.stages)}) trong mô hình.")
     stage = transformer.stages[target_stage][1]  # layers

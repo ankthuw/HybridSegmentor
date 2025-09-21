@@ -145,17 +145,9 @@ class MiT(nn.Module):
         # h, w = x.shape[-2:]
         layer_outputs = []
         for overlapping, layers in self.stages:
-            # x = overlapping(x)  # (b, c x kernel x kernel, num_patches)
-            # for (attension, ffn) in layers:  # attention, feed forward
-            #     x = attension(x) + x  # skip connection
-                # x = ffn(x) + x
-            x = overlapping(x)
-            for block in layers:
-                if not isinstance(block, (list, tuple)) or len(block) != 2:
-                    print("[DEBUG] Block lỗi hoặc không đúng cấu trúc:", block)
-                    continue
-                attension, ffn = block
-                x = attension(x) + x
+            x = overlapping(x)  # (b, c x kernel x kernel, num_patches)
+            for (attension, ffn) in layers:  # attention, feed forward
+                x = attension(x) + x  # skip connection
                 x = ffn(x) + x
 
             layer_outputs.append(x)  # multi scale features

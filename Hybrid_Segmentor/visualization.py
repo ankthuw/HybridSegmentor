@@ -200,3 +200,36 @@ def compare_heatmaps(heatmap1, heatmap2, image, alpha=0.5, colormap='jet'):
         ax.axis('off')
     plt.tight_layout()
     return fig
+
+def visualize_all_stages(model, img_tensor, image_np, alpha=0.5, colormap='jet'):
+    """
+    Visualize Grad-CAM và Attention Rollout cho tất cả các stage của CNN và Transformer.
+    Args:
+        model: mô hình HybridSegmentor
+        img_tensor: tensor ảnh đầu vào (1, C, H, W)
+        image_np: numpy array ảnh gốc (H, W, 3)
+        alpha: độ trong suốt overlay
+        colormap: tên colormap matplotlib
+    Returns:
+        fig: matplotlib figure
+    """
+    cnn_layers = ['encoder2', 'encoder3', 'encoder4', 'encoder5']
+    n_stages = len(model.mix_transformer.stages)
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(2, max(len(cnn_layers), n_stages), figsize=(5*max(len(cnn_layers), n_stages), 10))
+    # Grad-CAM cho các layer CNN
+    for i, layer in enumerate(cnn_layers):
+        heatmap_cnn = generate_gradcam_cnn(model, img_tensor, target_layer_name=layer)
+        ax = axs[0, i]
+        compare_heatmaps(heatmap_cnn, heatmap_cnn, image_np, alpha=alpha, colormap=colormap)  # chỉ overlay 1 heatmap
+        ax.set_title(f'Grad-CAM {layer}')
+        ax.axis('off')
+    # Attention rollout cho các stage Transformer
+    for i in range(n_stages):
+        heatmap_trans = generate_attention_rollout_transformer(model, img_tensor, target_stage=i)
+        ax = axs[1, i]
+        compare_heatmaps(heatmap_trans, heatmap_trans, image_np, alpha=alpha, colormap=colormap)
+        ax.set_title(f'Attention Rollout Stage {i}')
+        ax.axis('off')
+    plt.tight_layout()
+    return fig

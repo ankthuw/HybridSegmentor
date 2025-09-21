@@ -149,7 +149,7 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=Non
 
 # So sánh hai heatmap
 
-def compare_heatmaps(heatmap1, heatmap2, image, alpha=0.5):
+def compare_heatmaps(heatmap1, heatmap2, image, alpha=0.5, colormap='jet'):
     """
     Overlay hai heatmap lên ảnh gốc để so sánh
     Args:
@@ -157,9 +157,11 @@ def compare_heatmaps(heatmap1, heatmap2, image, alpha=0.5):
         heatmap2: numpy array (H, W, 3), ví dụ attention rollout
         image: numpy array (H, W, 3) hoặc (C, H, W)
         alpha: độ trong suốt
+        colormap: tên colormap matplotlib (mặc định 'jet')
     Returns:
         fig: matplotlib figure
     """
+    import matplotlib.cm as cm
     if image.shape[0] == 3 and image.ndim == 3:
         image = np.transpose(image, (1, 2, 0))  # (H, W, C)
     image = (image - image.min()) / (image.max() - image.min() + 1e-8)
@@ -169,9 +171,23 @@ def compare_heatmaps(heatmap1, heatmap2, image, alpha=0.5):
         heatmap1 = np.array(Image.fromarray(heatmap1).resize((image.shape[1], image.shape[0]), resample=Image.BILINEAR))
     if heatmap2.shape[:2] != image.shape[:2]:
         heatmap2 = np.array(Image.fromarray(heatmap2).resize((image.shape[1], image.shape[0]), resample=Image.BILINEAR))
+    # Convert heatmap to grayscale if needed
+    if heatmap1.ndim == 3 and heatmap1.shape[2] == 3:
+        heatmap1_gray = cv2.cvtColor(heatmap1, cv2.COLOR_RGB2GRAY)
+    else:
+        heatmap1_gray = heatmap1
+    if heatmap2.ndim == 3 and heatmap2.shape[2] == 3:
+        heatmap2_gray = cv2.cvtColor(heatmap2, cv2.COLOR_RGB2GRAY)
+    else:
+        heatmap2_gray = heatmap2
+    # Apply colormap
+    heatmap1_color = cm.get_cmap(colormap)(heatmap1_gray / 255.0)[..., :3]
+    heatmap1_color = np.uint8(255 * heatmap1_color)
+    heatmap2_color = cm.get_cmap(colormap)(heatmap2_gray / 255.0)[..., :3]
+    heatmap2_color = np.uint8(255 * heatmap2_color)
     # Overlay
-    overlay1 = cv2.addWeighted(image, 1-alpha, heatmap1, alpha, 0)
-    overlay2 = cv2.addWeighted(image, 1-alpha, heatmap2, alpha, 0)
+    overlay1 = cv2.addWeighted(image, 1-alpha, heatmap1_color, alpha, 0)
+    overlay2 = cv2.addWeighted(image, 1-alpha, heatmap2_color, alpha, 0)
     # So sánh
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
     axs[0].imshow(image)

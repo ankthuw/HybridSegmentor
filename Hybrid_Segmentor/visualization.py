@@ -213,6 +213,7 @@ def visualize_all_stages(model, img_tensor, image_np, alpha=0.5, colormap='jet')
     Returns:
         fig: matplotlib figure
     """
+    import matplotlib.cm as cm
     cnn_layers = ['encoder2', 'encoder3', 'encoder4', 'encoder5']
     n_stages = len(model.mix_transformer.stages)
     import matplotlib.pyplot as plt
@@ -220,16 +221,34 @@ def visualize_all_stages(model, img_tensor, image_np, alpha=0.5, colormap='jet')
     # Grad-CAM cho các layer CNN
     for i, layer in enumerate(cnn_layers):
         heatmap_cnn = generate_gradcam_cnn(model, img_tensor, target_layer_name=layer)
-        ax = axs[0, i]
-        compare_heatmaps(heatmap_cnn, heatmap_cnn, image_np, alpha=alpha, colormap=colormap)  # chỉ overlay 1 heatmap
-        ax.set_title(f'Grad-CAM {layer}')
-        ax.axis('off')
+        # Resize heatmap nếu cần
+        if heatmap_cnn.shape[:2] != image_np.shape[:2]:
+            heatmap_cnn = np.array(Image.fromarray(heatmap_cnn).resize((image_np.shape[1], image_np.shape[0]), resample=Image.BILINEAR))
+        # Convert to color
+        if heatmap_cnn.ndim == 3 and heatmap_cnn.shape[2] == 3:
+            heatmap_gray = cv2.cvtColor(heatmap_cnn, cv2.COLOR_RGB2GRAY)
+        else:
+            heatmap_gray = heatmap_cnn
+        heatmap_color = cm.get_cmap(colormap)(heatmap_gray / 255.0)[..., :3]
+        heatmap_color = np.uint8(255 * heatmap_color)
+        overlay = cv2.addWeighted(image_np, 1-alpha, heatmap_color, alpha, 0)
+        axs[0, i].imshow(overlay)
+        axs[0, i].set_title(f'Grad-CAM {layer}')
+        axs[0, i].axis('off')
     # Attention rollout cho các stage Transformer
     for i in range(n_stages):
         heatmap_trans = generate_attention_rollout_transformer(model, img_tensor, target_stage=i)
-        ax = axs[1, i]
-        compare_heatmaps(heatmap_trans, heatmap_trans, image_np, alpha=alpha, colormap=colormap)
-        ax.set_title(f'Attention Rollout Stage {i}')
-        ax.axis('off')
+        if heatmap_trans.shape[:2] != image_np.shape[:2]:
+            heatmap_trans = np.array(Image.fromarray(heatmap_trans).resize((image_np.shape[1], image_np.shape[0]), resample=Image.BILINEAR))
+        if heatmap_trans.ndim == 3 and heatmap_trans.shape[2] == 3:
+            heatmap_gray = cv2.cvtColor(heatmap_trans, cv2.COLOR_RGB2GRAY)
+        else:
+            heatmap_gray = heatmap_trans
+        heatmap_color = cm.get_cmap(colormap)(heatmap_gray / 255.0)[..., :3]
+        heatmap_color = np.uint8(255 * heatmap_color)
+        overlay = cv2.addWeighted(image_np, 1-alpha, heatmap_color, alpha, 0)
+        axs[1, i].imshow(overlay)
+        axs[1, i].set_title(f'Attention Rollout Stage {i}')
+        axs[1, i].axis('off')
     plt.tight_layout()
     return fig

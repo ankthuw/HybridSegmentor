@@ -132,7 +132,11 @@ def generate_attention_rollout_transformer(model, input_tensor, target_stage=Non
         attn = attn / attn.sum(dim=-1, keepdim=True)
         rollout = attn @ rollout
     mask = rollout[0, 1:]  # bỏ token đầu nếu có, lấy attention tới các patch
-    h = w = int(mask.shape[0] ** 0.5)
+    N = mask.shape[0]
+    h = int(np.floor(np.sqrt(N)))
+    w = int(np.ceil(N / h))
+    if h * w != N:
+        mask = np.pad(mask, (0, h * w - N), mode='constant')
     heatmap = mask.reshape(h, w).numpy()
     heatmap = np.maximum(heatmap, 0)
     heatmap = heatmap / (np.max(heatmap) + 1e-8)

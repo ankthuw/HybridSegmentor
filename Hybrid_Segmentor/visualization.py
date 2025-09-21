@@ -231,7 +231,10 @@ def visualize_all_stages(model, img_tensor, image_np, alpha=0.5, colormap='jet')
             heatmap_gray = heatmap_cnn
         heatmap_color = cm.get_cmap(colormap)(heatmap_gray / 255.0)[..., :3]
         heatmap_color = np.uint8(255 * heatmap_color)
-        overlay = cv2.addWeighted(image_np, 1-alpha, heatmap_color, alpha, 0)
+        # Ensure both are uint8
+        img_uint8 = image_np.astype(np.uint8)
+        heatmap_color = heatmap_color.astype(np.uint8)
+        overlay = cv2.addWeighted(img_uint8, 1-alpha, heatmap_color, alpha, 0)
         axs[0, i].imshow(overlay)
         axs[0, i].set_title(f'Grad-CAM {layer}')
         axs[0, i].axis('off')
@@ -246,7 +249,9 @@ def visualize_all_stages(model, img_tensor, image_np, alpha=0.5, colormap='jet')
             heatmap_gray = heatmap_trans
         heatmap_color = cm.get_cmap(colormap)(heatmap_gray / 255.0)[..., :3]
         heatmap_color = np.uint8(255 * heatmap_color)
-        overlay = cv2.addWeighted(image_np, 1-alpha, heatmap_color, alpha, 0)
+        img_uint8 = image_np.astype(np.uint8)
+        heatmap_color = heatmap_color.astype(np.uint8)
+        overlay = cv2.addWeighted(img_uint8, 1-alpha, heatmap_color, alpha, 0)
         axs[1, i].imshow(overlay)
         axs[1, i].set_title(f'Attention Rollout Stage {i}')
         axs[1, i].axis('off')

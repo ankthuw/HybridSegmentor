@@ -26,34 +26,37 @@ class DiceLoss(nn.Module):
 class DiceBCELoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceBCELoss, self).__init__()
+        self.debug_mode = False
+
+    def set_debug_mode(self, mode):
+        self.debug_mode = mode
 
     def forward(self, inputs, targets, smooth=1, weight=0.5):
-        
-        #comment out if  model contains a sigmoid or equivalent activation layer
         inputs_sigmoid = F.sigmoid(inputs)
         
-        #flatten label and prediction tensors
         inputs = inputs.view(-1)
         inputs_sigmoid = inputs_sigmoid.view(-1)
         targets = targets.view(-1)
-        
-        # Debug prints
-        print("Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
-        print("Targets sum:", targets.sum().item())
-        print("Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
         
         intersection = (inputs_sigmoid * targets).sum()
         dice_loss = 1 - (2.*intersection + smooth)/(inputs_sigmoid.sum() + targets.sum() + smooth)
         BCE = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
 
-        print("Intersection:", intersection.item())
-        print("Dice Loss:", dice_loss.item())
-        print("BCE Loss:", BCE.item())
-        print("Weight:", weight)
+        if self.debug_mode:
+            print("=== Debug Information ===")
+            print("Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
+            print("Targets sum:", targets.sum().item())
+            print("Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
+            print("Intersection:", intersection.item())
+            print("Dice Loss:", dice_loss.item())
+            print("BCE Loss:", BCE.item())
+            print("Weight:", weight)
 
         Dice_BCE = weight*BCE + (1-weight)*dice_loss
         
-        print("Total Dice_BCE Loss:", Dice_BCE.item())
+        if self.debug_mode:
+            print("Total Dice_BCE Loss:", Dice_BCE.item())
+            print("=======================")
         
         return Dice_BCE
     
@@ -104,5 +107,5 @@ class FocalLoss(nn.Module):
         focal_loss = alpha * (1-BCE_EXP)**gamma * BCE
                        
         return focal_loss
-    
+
 

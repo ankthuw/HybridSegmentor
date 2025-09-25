@@ -300,6 +300,7 @@ class HybridSegmentor(pl.LightningModule):
         
         # loss function
         self.loss_fn = DiceBCELoss()
+        self.loss_fn.set_debug_mode(False)  # Tắt debug info trong quá trình training
         # self.loss_fn = Dice()
         # self.loss_fn = nn.BCEWithLogitsLoss()
         
@@ -358,11 +359,6 @@ class HybridSegmentor(pl.LightningModule):
                        'train_IOU': jaccard,
                        'train_dice': dice},
                       on_step=False, on_epoch=True, prog_bar=True)
-        
-        # if batch_idx % 100 == 0:
-        #     x = x[:8]
-        #     grid = torchvision.utils.make_grid(x.view(-1, 3, 256, 256))
-        #     self.logger.experiment.add_image("crack_images", grid, self.global_step)
 
         return loss
     
@@ -378,8 +374,13 @@ class HybridSegmentor(pl.LightningModule):
         dice_loss = self.dice_loss_fn(pred, y)
         dice = 1.0 - dice_loss
 
-        self.log_dict({'val_loss': loss, 'val_accuracy': accuracy, 'val_f1_score': f1_score, 
-                      'val_precision': precision,  'val_recall': re, 'val_IOU': jaccard, 'val_dice': dice},
+        self.log_dict({'val_loss': loss,
+                       'val_accuracy': accuracy,
+                       'val_f1_score': f1_score, 
+                       'val_precision': precision,
+                       'val_recall': re,
+                       'val_IOU': jaccard,
+                       'val_dice': dice},
                       on_step=False, on_epoch=True, prog_bar=True)
         
         return loss
@@ -396,9 +397,14 @@ class HybridSegmentor(pl.LightningModule):
         # DiceLoss trả về (1 - dice), nên dice = 1 - dice_loss
         dice_loss = self.dice_loss_fn(pred, y)
         dice = 1.0 - dice_loss
-        self.log_dict({'test_loss': loss, 'test_accuracy': accuracy, 'test_f1_score': f1_score, 
-                      'test_precision': precision,  'test_recall': re, 'test_IOU': jaccard, 'test_dice': dice},
-                      on_step=False, on_epoch=True, prog_bar=False) 
+        self.log_dict({'test_loss': loss,
+                       'test_accuracy': accuracy,
+                       'test_f1_score': f1_score, 
+                       'test_precision': precision,
+                       'test_recall': re,
+                       'test_IOU': jaccard,
+                       'test_dice': dice},
+                      on_step=False, on_epoch=False, prog_bar=False) 
         return loss
     
     def _common_step(self, batch, batch_idx):
@@ -407,6 +413,12 @@ class HybridSegmentor(pl.LightningModule):
         y = y.float().unsqueeze(1).to(config.DEVICE)
         pred_lst = self.forward(x)
         pred = pred_lst[0]
+        
+        if self.training:
+            self.loss_fn.set_debug_mode(False)
+        else:
+            self.loss_fn.set_debug_mode(True)       
+        
         loss = self.loss_fn(pred, y, weight=0.2)
         # loss_recall = 1-self.recall(pred, y)
         # loss *= loss_recall

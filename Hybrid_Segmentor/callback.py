@@ -10,20 +10,28 @@ class MyPrintingCallBack(Callback):
 
     def on_train_end(self, trainer, pl_module):
         print("Training is done")
+        
+    def on_validation_end(self, trainer, pl_module):
+        print("Validation completed")
+
+# Tạo thư mục checkpoints nếu chưa tồn tại
+checkpoint_dir = os.path.join(os.getcwd(), 'checkpoints', 'hybrid_model_bifusion')
+os.makedirs(checkpoint_dir, exist_ok=True)
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath=os.path.join(os.getcwd(), 'checkpoints', 'v7_BCEDICE0_2_final'),
-    filename='v7-epoch{epoch:02d}-val_loss{val_loss:.4f}',
+    dirpath=checkpoint_dir,
+    filename='hybrid-{epoch:02d}-{val_loss:.4f}',
     verbose=True,
     save_last=True,
-    save_top_k=5,
+    save_top_k=3,  # Lưu 3 model tốt nhất
     monitor='val_loss',
     mode='min'
 )
 
 early_stopping = EarlyStopping(
     monitor='val_loss',
-    patience=10,
+    patience=5,  # Giảm patience để dừng sớm hơn
     verbose=True,
-    mode='min'
+    mode='min',
+    min_delta=1e-4  # Thêm ngưỡng tối thiểu để xem xét cải thiện
 )

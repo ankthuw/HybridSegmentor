@@ -358,7 +358,7 @@ class HybridSegmentor(pl.LightningModule):
                        'train_recall': re, 
                        'train_IOU': jaccard,
                        'train_dice': dice},
-                      on_step=False, on_epoch=True, prog_bar=True)
+                      on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
         return loss
     
@@ -381,7 +381,7 @@ class HybridSegmentor(pl.LightningModule):
                        'val_recall': re,
                        'val_IOU': jaccard,
                        'val_dice': dice},
-                      on_step=False, on_epoch=True, prog_bar=True)
+                      on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         
         return loss
 
@@ -404,7 +404,7 @@ class HybridSegmentor(pl.LightningModule):
                        'test_recall': re,
                        'test_IOU': jaccard,
                        'test_dice': dice},
-                      on_step=False, on_epoch=True, prog_bar=False) 
+                      on_step=False, on_epoch=True, prog_bar=False, sync_dist=True) 
         return loss
     
     def _common_step(self, batch, batch_idx):
@@ -413,42 +413,29 @@ class HybridSegmentor(pl.LightningModule):
         y = y.float().unsqueeze(1).to(config.DEVICE)
         pred_lst = self.forward(x)
         pred = pred_lst[0]
-        
-        if self.training:
-            self.loss_fn.set_debug_mode(False)
-        else:
-            # Debug information during validation
-            print("\n=== Validation Debug Info ===")
-            print(f"Input shape: {x.shape}")
-            print(f"Target shape: {y.shape}")
-            print(f"Prediction shape: {pred.shape}")
-            print(f"Target unique values: {torch.unique(y).tolist()}")
-            print(f"Target sum: {y.sum().item()}")
-            print(f"Pred min/max before sigmoid: [{pred.min().item():.4f}, {pred.max().item():.4f}]")
-            self.loss_fn.set_debug_mode(True)       
-        
+
         loss = self.loss_fn(pred, y, weight=0.2)
         # loss_recall = 1-self.recall(pred, y)
         # loss *= loss_recall
         pred = torch.sigmoid(pred)
         pred = (pred > 0.5).float()
         
-        if not self.training:
-            # Calculate metrics
-            accuracy = self.accuracy(pred, y)
-            f1_score = self.f1_score(pred, y)
-            precision = self.precision(pred, y)
-            recall = self.recall(pred, y)
+        # if not self.training:
+        #     # Calculate metrics
+        #     accuracy = self.accuracy(pred, y)
+        #     f1_score = self.f1_score(pred, y)
+        #     precision = self.precision(pred, y)
+        #     recall = self.recall(pred, y)
             
-            print("\n=== After Processing ===")
-            print(f"Pred min/max after sigmoid: [{pred.min().item():.4f}, {pred.max().item():.4f}]")
-            print(f"Pred unique values after threshold: {torch.unique(pred).tolist()}")
-            print(f"Prediction sum: {pred.sum().item()}")
-            print(f"Accuracy: {accuracy:.4f}")
-            print(f"F1 Score: {f1_score:.4f}")
-            print(f"Precision: {precision:.4f}")
-            print(f"Recall: {recall:.4f}")
-            print("========================\n")
+        #     print("\n=== After Processing ===")
+        #     print(f"Pred min/max after sigmoid: [{pred.min().item():.4f}, {pred.max().item():.4f}]")
+        #     print(f"Pred unique values after threshold: {torch.unique(pred).tolist()}")
+        #     print(f"Prediction sum: {pred.sum().item()}")
+        #     print(f"Accuracy: {accuracy:.4f}")
+        #     print(f"F1 Score: {f1_score:.4f}")
+        #     print(f"Precision: {precision:.4f}")
+        #     print(f"Recall: {recall:.4f}")
+        #     print("========================\n")
         
         return loss, pred, y
     

@@ -42,21 +42,21 @@ class DiceBCELoss(nn.Module):
         dice_loss = 1 - (2.*intersection + smooth)/(inputs_sigmoid.sum() + targets.sum() + smooth)
         BCE = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
 
-        if self.debug_mode:
-            print("=== Debug Information ===")
-            print("     Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
-            print("     Targets sum:", targets.sum().item())
-            print("     Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
-            print("     Intersection:", intersection.item())
-            print("     Dice Loss:", dice_loss.item())
-            print("     BCE Loss:", BCE.item())
-            print("     Weight:", weight)
+        # if self.debug_mode:
+        #     print("=== Debug Information ===")
+        #     print("     Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
+        #     print("     Targets sum:", targets.sum().item())
+        #     print("     Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
+        #     print("     Intersection:", intersection.item())
+        #     print("     Dice Loss:", dice_loss.item())
+        #     print("     BCE Loss:", BCE.item())
+        #     print("     Weight:", weight)
 
         Dice_BCE = weight*BCE + (1-weight)*dice_loss
         
-        if self.debug_mode:
-            print("     Total Dice_BCE Loss:", Dice_BCE.item())
-            print("=======================")
+        # if self.debug_mode:
+        #     print("     Total Dice_BCE Loss:", Dice_BCE.item())
+        #     print("=======================")
         
         return Dice_BCE
     

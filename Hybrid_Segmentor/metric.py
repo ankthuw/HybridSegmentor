@@ -15,19 +15,9 @@ class DiceLoss(nn.Module):
         #flatten label and prediction tensors
         inputs = inputs.view(-1)
         targets = targets.view(-1)
-        
-        # Debug prints
-        print("Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
-        print("Targets unique values:", torch.unique(targets))
-        print("Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
-        print("Targets sum:", targets.sum().item())
-        
+ 
         intersection = (inputs * targets).sum()                            
         dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
-        
-        print("Intersection:", intersection.item())
-        print("Dice score:", dice.item())
-        print("Dice loss:", (1 - dice).item())
         
         return 1 - dice
     

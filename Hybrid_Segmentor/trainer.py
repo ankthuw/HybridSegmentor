@@ -21,9 +21,15 @@ if __name__ == "__main__":
     # trainer = pl.Trainer(logger=logger, accelerator="gpu", min_epochs=1, 
     #                      max_epochs=config.NUM_EPOCHS, precision='16-mixed',
     #                      callbacks=[checkpoint_callback, early_stopping])
-    trainer = pl.Trainer(logger=False, enable_checkpointing=False, accelerator="gpu",
-                         min_epochs=1, max_epochs=config.NUM_EPOCHS, precision="16-mixed",
-                         callbacks=[EarlyStopping(monitor="val_loss", patience=10)], enable_model_summary=False, log_every_n_steps=0  
+    trainer = pl.Trainer(logger=False, 
+                         enable_checkpointing=False, 
+                         accelerator="gpu",
+                         min_epochs=1, 
+                         max_epochs=config.NUM_EPOCHS, 
+                         precision="16-mixed",
+                         callbacks=[EarlyStopping(monitor="val_loss", patience=10)], 
+                         enable_model_summary=False, 
+                         log_every_n_steps=0  
     )
     trainer.fit(model, train_loader, val_loader)
     trainer.validate(model, val_loader)

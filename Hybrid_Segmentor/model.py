@@ -1,22 +1,32 @@
-import torch
-from torch import nn
-from einops import rearrange
+# Standard library
 from math import sqrt
-import torchvision.transforms.functional as TF
-import pytorch_lightning as pl
-import torch.optim as optim
-from torch.optim import lr_scheduler
-import torch.nn.functional as F
-import config
-import torchvision
-from torchvision.models import resnet50, ResNet50_Weights
-from metric import DiceBCELoss, DiceLoss
-import torchmetrics
-from torchmetrics.classification \
-    import BinaryJaccardIndex, BinaryRecall, BinaryAccuracy, \
-        BinaryPrecision, BinaryF1Score
-# from torchmetrics.segmentation import DiceScore
+
+# Third-party
 import numpy as np
+import torch
+from torch import nn, optim
+import torch.nn.functional as F
+from torch.optim import lr_scheduler
+import torchvision
+from torchvision import transforms
+from torchvision.models import resnet50, ResNet50_Weights
+import pytorch_lightning as pl
+import torchmetrics
+from torchmetrics.classification import (
+    BinaryAccuracy,
+    BinaryF1Score,
+    BinaryJaccardIndex,
+    BinaryPrecision,
+    BinaryRecall,
+)
+# from torchmetrics.segmentation import DiceScore
+from einops import rearrange
+import torchvision.transforms.functional as TF
+
+# Local application
+import config
+from metric import DiceBCELoss, DiceLoss
+
 
 
 DEVICE = config.DEVICE
@@ -292,6 +302,7 @@ class HybridSegmentor(pl.LightningModule):
         self.loss_fn = DiceBCELoss()
         # self.loss_fn = Dice()
         # self.loss_fn = nn.BCEWithLogitsLoss()
+        
         # Confusion matrix
         self.accuracy = BinaryAccuracy()
         self.f1_score = BinaryF1Score()
@@ -339,8 +350,13 @@ class HybridSegmentor(pl.LightningModule):
         dice_loss = self.dice_loss_fn(pred, y)
         dice = 1.0 - dice_loss
 
-        self.log_dict({'train_loss': loss, 'train_accuracy': accuracy, 'train_f1_score': f1_score, 
-                      'train_precision': precision,  'train_recall': re, 'train_IOU': jaccard, 'train_dice': dice},
+        self.log_dict({'train_loss': loss, 
+                       'train_accuracy': accuracy, 
+                       'train_f1_score': f1_score, 
+                       'train_precision': precision,  
+                       'train_recall': re, 
+                       'train_IOU': jaccard,
+                       'train_dice': dice},
                       on_step=False, on_epoch=True, prog_bar=True)
         
         # if batch_idx % 100 == 0:

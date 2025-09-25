@@ -16,8 +16,18 @@ class DiceLoss(nn.Module):
         inputs = inputs.view(-1)
         targets = targets.view(-1)
         
+        # Debug prints
+        print("Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
+        print("Targets unique values:", torch.unique(targets))
+        print("Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
+        print("Targets sum:", targets.sum().item())
+        
         intersection = (inputs * targets).sum()                            
         dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
+        
+        print("Intersection:", intersection.item())
+        print("Dice score:", dice.item())
+        print("Dice loss:", (1 - dice).item())
         
         return 1 - dice
     
@@ -37,11 +47,23 @@ class DiceBCELoss(nn.Module):
         inputs_sigmoid = inputs_sigmoid.view(-1)
         targets = targets.view(-1)
         
+        # Debug prints
+        print("Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
+        print("Targets sum:", targets.sum().item())
+        print("Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
+        
         intersection = (inputs_sigmoid * targets).sum()
         dice_loss = 1 - (2.*intersection + smooth)/(inputs_sigmoid.sum() + targets.sum() + smooth)
         BCE = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
 
+        print("Intersection:", intersection.item())
+        print("Dice Loss:", dice_loss.item())
+        print("BCE Loss:", BCE.item())
+        print("Weight:", weight)
+
         Dice_BCE = weight*BCE + (1-weight)*dice_loss
+        
+        print("Total Dice_BCE Loss:", Dice_BCE.item())
         
         return Dice_BCE
     

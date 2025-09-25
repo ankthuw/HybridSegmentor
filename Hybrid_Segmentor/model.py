@@ -404,7 +404,7 @@ class HybridSegmentor(pl.LightningModule):
                        'test_recall': re,
                        'test_IOU': jaccard,
                        'test_dice': dice},
-                      on_step=False, on_epoch=False, prog_bar=False) 
+                      on_step=False, on_epoch=True, prog_bar=False) 
         return loss
     
     def _common_step(self, batch, batch_idx):

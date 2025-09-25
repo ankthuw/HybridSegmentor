@@ -44,18 +44,18 @@ class DiceBCELoss(nn.Module):
 
         if self.debug_mode:
             print("=== Debug Information ===")
-            print("Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
-            print("Targets sum:", targets.sum().item())
-            print("Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
-            print("Intersection:", intersection.item())
-            print("Dice Loss:", dice_loss.item())
-            print("BCE Loss:", BCE.item())
-            print("Weight:", weight)
+            print("     Inputs_sigmoid range:", inputs_sigmoid.min().item(), inputs_sigmoid.max().item())
+            print("     Targets sum:", targets.sum().item())
+            print("     Inputs_sigmoid sum:", inputs_sigmoid.sum().item())
+            print("     Intersection:", intersection.item())
+            print("     Dice Loss:", dice_loss.item())
+            print("     BCE Loss:", BCE.item())
+            print("     Weight:", weight)
 
         Dice_BCE = weight*BCE + (1-weight)*dice_loss
         
         if self.debug_mode:
-            print("Total Dice_BCE Loss:", Dice_BCE.item())
+            print("     Total Dice_BCE Loss:", Dice_BCE.item())
             print("=======================")
         
         return Dice_BCE

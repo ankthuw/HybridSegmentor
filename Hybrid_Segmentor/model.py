@@ -434,10 +434,20 @@ class HybridSegmentor(pl.LightningModule):
         pred = (pred > 0.5).float()
         
         if not self.training:
+            # Calculate metrics
+            accuracy = self.accuracy(pred, y)
+            f1_score = self.f1_score(pred, y)
+            precision = self.precision(pred, y)
+            recall = self.recall(pred, y)
+            
             print("\n=== After Processing ===")
             print(f"Pred min/max after sigmoid: [{pred.min().item():.4f}, {pred.max().item():.4f}]")
             print(f"Pred unique values after threshold: {torch.unique(pred).tolist()}")
             print(f"Prediction sum: {pred.sum().item()}")
+            print(f"Accuracy: {accuracy:.4f}")
+            print(f"F1 Score: {f1_score:.4f}")
+            print(f"Precision: {precision:.4f}")
+            print(f"Recall: {recall:.4f}")
             print("========================\n")
         
         return loss, pred, y

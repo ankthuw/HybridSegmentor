@@ -254,29 +254,35 @@ class Up(nn.Module):
         super().__init__()
 
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.conv = DoubleConv(in_ch1+in_ch2, out_ch)
+        
+        # If we have a second input, account for its channels
+        if in_ch2 > 0:
+            self.conv = DoubleConv(in_ch1 + in_ch2, out_ch)
+        else:
+            self.conv = DoubleConv(in_ch1, out_ch)
 
         if attn:
-            self.attn_block = Attention_block(in_ch1, in_ch2, out_ch)
+            # Fix: Use output channels for intermediate feature dimension
+            self.attn_block = Attention_block(F_g=in_ch1, F_l=in_ch2, F_int=out_ch)
         else:
             self.attn_block = None
 
     def forward(self, x1, x2=None):
-
         x1 = self.up(x1)
-        # input is CHW
+        
         if x2 is not None:
-            diffY = torch.tensor([x2.size()[2] - x1.size()[2]])
-            diffX = torch.tensor([x2.size()[3] - x1.size()[3]])
+            # Handle different spatial dimensions
+            diffY = x2.size()[2] - x1.size()[2]
+            diffX = x2.size()[3] - x1.size()[3]
 
             x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                            diffY // 2, diffY - diffY // 2])
+                           diffY // 2, diffY - diffY // 2])
 
             if self.attn_block is not None:
                 x2 = self.attn_block(x1, x2)
             x1 = torch.cat([x2, x1], dim=1)
-        x = x1
-        return self.conv(x)
+            
+        return self.conv(x1)
 
 class Attention_block(nn.Module):
     def __init__(self,F_g,F_l,F_int):
@@ -374,11 +380,12 @@ class HybridSegmentor(pl.LightningModule):
         self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)    
         self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=1024, ch_out=1024)
 
-        self.up1 = Up(in_ch1=64, out_ch=32, attn=True)
-        self.up2 = Up(in_ch1=256, out_ch=64, attn=True) 
-        self.up3 = Up(in_ch1=512, out_ch=128, attn=True)
-        self.up4 = Up(in_ch1=1024, out_ch=256, attn=True)
-        self.up5 = Up(in_ch1=2048, out_ch=256, attn=True)
+        # Update the Up modules with correct channel dimensions
+        self.up1 = Up(in_ch1=64, out_ch=32, in_ch2=0, attn=True)  # No skip connection
+        self.up2 = Up(in_ch1=256, out_ch=64, in_ch2=64, attn=True)
+        self.up3 = Up(in_ch1=512, out_ch=128, in_ch2=256, attn=True)
+        self.up4 = Up(in_ch1=1024, out_ch=256, in_ch2=512, attn=True)
+        self.up5 = Up(in_ch1=2048, out_ch=256, in_ch2=1024, attn=True)
 
         total_channels = 32 + 64 + 128 + 256 + 256  # Sum of channels from up1-up5
         self.final = nn.Sequential(

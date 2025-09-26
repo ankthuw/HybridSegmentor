@@ -373,28 +373,28 @@ class HybridSegmentor(pl.LightningModule):
                  learning_rate=config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()
         
-        # Keep MiT and CNN encoders
+        # Keep encoders
         self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
         self.cnn_encoder = ResNetEncoder()
 
-        # BiFusion blocks - match channels from both encoders
-        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=64)        
-        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=128, ch_out=256)    
-        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=256, ch_out=512)    
-        self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=512, ch_out=1024)
+        # Simplified BiFusion blocks with reduced channels
+        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
+        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
+        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=256, ch_out=256)    
+        self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=512, ch_out=512)
 
-        # Decoder path with correct channel dimensions
-        self.up5 = Up(2048, 1024, 1024, attn=True)  # From ResNet encoder's last layer
-        self.up4 = Up(1024, 512, 512, attn=True)
-        self.up3 = Up(512, 256, 256, attn=True)
-        self.up2 = Up(256, 64, 64, attn=True)
+        # Lighter decoder path - reduced channels and selective attention
+        self.up5 = Up(2048, 512, 512, attn=True)  # Reduced from 1024 to 512
+        self.up4 = Up(512, 256, 256, attn=False)  # Removed attention
+        self.up3 = Up(256, 128, 128, attn=True)
+        self.up2 = Up(128, 64, 32, attn=False)   # Reduced channels
         self.up1 = Up(64, 32, attn=False)
 
-        # Final convolution - adjust input channels
+        # Simplified final convolution with fewer channels
         self.final = nn.Sequential(
-            Conv(1888, 256, 3, bn=True, relu=True),  # First reduce channels
-            Conv(256, 64, 3, bn=True, relu=True),
-            Conv(64, 1, 1, bn=False, relu=False)
+            Conv(992, 128, 3, bn=True, relu=True),  # 32 + 64 + 128 + 256 + 480 = 960
+            Conv(128, 32, 3, bn=True, relu=True),
+            Conv(32, 1, 1, bn=False, relu=False)
         )
 
         # loss function
@@ -428,30 +428,26 @@ class HybridSegmentor(pl.LightningModule):
         fused3 = self.fusion3(cnn_features[2], mit_features[2])
         fused4 = self.fusion4(cnn_features[3], mit_features[3])
         
-        # Decoder path
+        # Simplified decoder path
         d5 = self.up5(cnn_features[4], fused4)
         d4 = self.up4(d5, fused3)
         d3 = self.up3(d4, fused2)
         d2 = self.up2(d3, fused1)
         d1 = self.up1(d2)
         
-        # Ensure all features are at the same scale
+        # Upscale features to match resolution
         decoder_features = [d1, d2, d3, d4, d5]
-        for i in range(len(decoder_features)):
-            if i > 0:
-                decoder_features[i] = F.interpolate(
-                    decoder_features[i], 
-                    size=decoder_features[0].shape[2:],
-                    mode='bilinear', 
-                    align_corners=True
-                )
-        
-        # Concatenate all decoder features
-        concat_features = torch.cat(decoder_features, dim=1)  # Should have 1888 channels
-        
+        for i in range(1, len(decoder_features)):
+            decoder_features[i] = F.interpolate(
+                decoder_features[i], 
+                size=decoder_features[0].shape[2:],
+                mode='bilinear', 
+                align_corners=True
+            )
+
         # Final prediction
-        out = self.final(concat_features)
-        return out, decoder_features[0], decoder_features[1], decoder_features[2], decoder_features[3], decoder_features[4]
+        out = self.final(torch.cat(decoder_features, dim=1))
+        return out, d1, d2, d3, d4, d5
         
     def training_step(self, batch, batch_idx):
         x, y = batch

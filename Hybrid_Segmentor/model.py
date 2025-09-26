@@ -377,25 +377,26 @@ class HybridSegmentor(pl.LightningModule):
         self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
         self.cnn_encoder = ResNetEncoder()
 
-        # BiFusion blocks - channels match the feature maps
-        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=64, ch_out=64)        
-        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=256, ch_out=256)    
-        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)    
-        self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=1024, ch_out=1024)
+        # BiFusion blocks - match channels from both encoders
+        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=64)        
+        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=128, ch_out=256)    
+        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=256, ch_out=512)    
+        self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=512, ch_out=1024)
 
-        # Update the Up modules with correct channel dimensions
-        self.up4 = Up(in_ch1=1024, out_ch=512, in_ch2=512, attn=True)  # 1024 -> 512
-        self.up3 = Up(in_ch1=512, out_ch=256, in_ch2=256, attn=True)   # 512 -> 256
-        self.up2 = Up(in_ch1=256, out_ch=64, in_ch2=64, attn=True)     # 256 -> 64
-        self.up1 = Up(in_ch1=64, out_ch=32, in_ch2=0, attn=False)      # 64 -> 32
-        self.up5 = Up(in_ch1=2048, out_ch=1024, in_ch2=1024, attn=True) # 2048 -> 1024
+        # Decoder path with correct channel dimensions
+        self.up5 = Up(2048, 1024, 1024, attn=True)  # From ResNet encoder's last layer
+        self.up4 = Up(1024, 512, 512, attn=True)
+        self.up3 = Up(512, 256, 256, attn=True)
+        self.up2 = Up(256, 64, 64, attn=True)
+        self.up1 = Up(64, 32, attn=False)
 
-        total_channels = 32 + 64 + 128 + 256 + 256  # Sum of channels from up1-up5
+        # Final convolution - adjust input channels
         self.final = nn.Sequential(
-            Conv(total_channels, 64, 3, bn=True, relu=True),
-            Conv(64, 32, 3, bn=True, relu=True),
-            Conv(32, 1, 1, bn=False, relu=False)
+            Conv(1888, 256, 3, bn=True, relu=True),  # First reduce channels
+            Conv(256, 64, 3, bn=True, relu=True),
+            Conv(64, 1, 1, bn=False, relu=False)
         )
+
         # loss function
         self.loss_fn = DiceBCELoss()
         self.loss_fn.set_debug_mode(False)  # Tắt debug info trong quá trình training
@@ -417,47 +418,40 @@ class HybridSegmentor(pl.LightningModule):
 
 
     def forward(self, x):
-        mit_1, mit_2, mit_3, mit_4 = self.mix_transformer(x)
-        output1, output2, output3, output4, side_output5 = self.cnn_encoder(x)
-
-        fused1 = self.fusion1(output1, mit_1)
-        fused2 = self.fusion2(output2, mit_2)
-        fused3 = self.fusion3(output3, mit_3)
-        fused4 = self.fusion4(output4, mit_4)
+        # Encoder paths
+        mit_features = self.mix_transformer(x)
+        cnn_features = self.cnn_encoder(x)
         
-        # Progressive fusion from deep to shallow
-        # Level 4 fusion
-        fused4 = self.fusion4(output4, mit_4)  # 1024 channels
-        up4 = self.up4(fused4, output3)  # Using Up module with attention
-
-        # Level 3 fusion
-        fused3 = self.fusion3(output3, mit_3)  # 512 channels
-        up3 = self.up3(fused3, output2)  # Using Up module with attention
-
-        # Level 2 fusion
-        fused2 = self.fusion2(output2, mit_2)  # 256 channels
-        up2 = self.up2(fused2, output1)  # Using Up module with attention
-
-        # Level 1 fusion
-        fused1 = self.fusion1(output1, mit_1)  # 64 channels
-        up1 = self.up1(fused1)  # Shallowest features
-
-        # Handle deepest features
-        up5 = self.up5(side_output5)
-
+        # Fuse features
+        fused1 = self.fusion1(cnn_features[0], mit_features[0])
+        fused2 = self.fusion2(cnn_features[1], mit_features[1])
+        fused3 = self.fusion3(cnn_features[2], mit_features[2])
+        fused4 = self.fusion4(cnn_features[3], mit_features[3])
+        
+        # Decoder path
+        d5 = self.up5(cnn_features[4], fused4)
+        d4 = self.up4(d5, fused3)
+        d3 = self.up3(d4, fused2)
+        d2 = self.up2(d3, fused1)
+        d1 = self.up1(d2)
+        
         # Ensure all features are at the same scale
-        outputs = [up1, up2, up3, up4, up5]
-        for i in range(len(outputs)):
-            if i > 0:  # up1 is already at the right scale
-                outputs[i] = F.interpolate(outputs[i], 
-                                        size=outputs[0].shape[2:],
-                                        mode='bilinear', 
-                                        align_corners=True)
+        decoder_features = [d1, d2, d3, d4, d5]
+        for i in range(len(decoder_features)):
+            if i > 0:
+                decoder_features[i] = F.interpolate(
+                    decoder_features[i], 
+                    size=decoder_features[0].shape[2:],
+                    mode='bilinear', 
+                    align_corners=True
+                )
+        
+        # Concatenate all decoder features
+        concat_features = torch.cat(decoder_features, dim=1)  # Should have 1888 channels
         
         # Final prediction
-        out = self.final(torch.cat(outputs, dim=1))
-        return out, outputs[0], outputs[1], outputs[2], outputs[3], outputs[4]
-        
+        out = self.final(concat_features)
+        return out, decoder_features[0], decoder_features[1], decoder_features[2], decoder_features[3], decoder_features[4]
         
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -583,4 +577,3 @@ class HybridSegmentor(pl.LightningModule):
                 # multiple of "trainer.check_val_every_n_epoch".
             },
         }
-

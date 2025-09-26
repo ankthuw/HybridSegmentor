@@ -255,15 +255,18 @@ class Up(nn.Module):
 
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         
-        # If we have a second input, account for its channels
         if in_ch2 > 0:
             self.conv = DoubleConv(in_ch1 + in_ch2, out_ch)
         else:
             self.conv = DoubleConv(in_ch1, out_ch)
 
         if attn:
-            # Fix: Use output channels for intermediate feature dimension
-            self.attn_block = Attention_block(F_g=in_ch1, F_l=in_ch2, F_int=out_ch)
+            # Fix: Use the correct channel dimensions for attention block
+            self.attn_block = Attention_block(
+                F_g=in_ch1,    # Gate signal channels (from upper layer)
+                F_l=in_ch2,    # Local signal channels (from skip connection)
+                F_int=min(in_ch1, in_ch2) if in_ch2 > 0 else in_ch1  # Intermediate channels
+            )
         else:
             self.attn_block = None
 
@@ -381,11 +384,11 @@ class HybridSegmentor(pl.LightningModule):
         self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=1024, ch_out=1024)
 
         # Update the Up modules with correct channel dimensions
-        self.up1 = Up(in_ch1=64, out_ch=32, in_ch2=0, attn=True)  # No skip connection
-        self.up2 = Up(in_ch1=256, out_ch=64, in_ch2=64, attn=True)
-        self.up3 = Up(in_ch1=512, out_ch=128, in_ch2=256, attn=True)
-        self.up4 = Up(in_ch1=1024, out_ch=256, in_ch2=512, attn=True)
-        self.up5 = Up(in_ch1=2048, out_ch=256, in_ch2=1024, attn=True)
+        self.up4 = Up(in_ch1=1024, out_ch=512, in_ch2=512, attn=True)  # 1024 -> 512
+        self.up3 = Up(in_ch1=512, out_ch=256, in_ch2=256, attn=True)   # 512 -> 256
+        self.up2 = Up(in_ch1=256, out_ch=64, in_ch2=64, attn=True)     # 256 -> 64
+        self.up1 = Up(in_ch1=64, out_ch=32, in_ch2=0, attn=False)      # 64 -> 32
+        self.up5 = Up(in_ch1=2048, out_ch=1024, in_ch2=1024, attn=True) # 2048 -> 1024
 
         total_channels = 32 + 64 + 128 + 256 + 256  # Sum of channels from up1-up5
         self.final = nn.Sequential(

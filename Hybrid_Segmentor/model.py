@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.optim import lr_scheduler
 import torchvision
 from torchvision import transforms
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet18, resnet50, ResNet18_Weights, ResNet50_Weights
 import pytorch_lightning as pl
 import torchmetrics
 from torchmetrics.classification import (
@@ -148,17 +148,19 @@ class MiT(nn.Module):
     
 
 
-resnet_encoder = resnet50(weights=ResNet50_Weights.DEFAULT)
+# resnet_encoder = resnet50(weights=ResNet50_Weights.DEFAULT)
+resnet_encoder = resnet18(weights=ResNet18_Weights.DEFAULT)
+
 # resnet_encoder = resnet50()
 class ResNetEncoder(nn.Module):
     def __init__(self, encoder = resnet_encoder):
         super(ResNetEncoder, self).__init__()
         self.encoder1 = nn.Sequential(encoder.conv1, encoder.bn1, encoder.relu) # 64x128x128
         self.mp = encoder.maxpool
-        self.encoder2 = encoder.layer1 # 256x64x64
-        self.encoder3 = encoder.layer2 # 512x32x32
-        self.encoder4 = encoder.layer3 # 1024x16x16
-        self.encoder5 = encoder.layer4 # 2048x8x8
+        self.encoder2 = encoder.layer1 # 64x64x64  (thay vì 256)
+        self.encoder3 = encoder.layer2 # 128x32x32 (thay vì 512)
+        self.encoder4 = encoder.layer3 # 256x16x16 (thay vì 1024)
+        self.encoder5 = encoder.layer4 # 512x8x8   (thay vì 2048)
 
     def forward(self,x):
         output1 = self.encoder1(x)
@@ -368,7 +370,7 @@ class Residual(nn.Module):
     
 
 class HybridSegmentor(pl.LightningModule):
-    def __init__(self, channels=3, dims=(64, 256, 512, 1024), n_heads=(1, 2, 8, 8), 
+    def __init__(self, channels=3, dims=(64, 128, 256, 512), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
                  expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), 
                  learning_rate=config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()
@@ -377,30 +379,30 @@ class HybridSegmentor(pl.LightningModule):
         self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
         self.cnn_encoder = ResNetEncoder()
 
-        # Simplified BiFusion blocks with reduced channels
+        # Điều chỉnh các BiFusion blocks
         self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
-        self.fusion2 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
-        self.fusion3 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=256, ch_out=256)    
-        self.fusion4 = BiFusion_block(ch_1=1024, ch_2=1024, r_2=4, ch_int=512, ch_out=512)
+        self.fusion2 = BiFusion_block(ch_1=64, ch_2=128, r_2=4, ch_int=64, ch_out=64)    
+        self.fusion3 = BiFusion_block(ch_1=128, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
+        self.fusion4 = BiFusion_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
 
-        # Lighter decoder path - reduced channels and selective attention
-        self.up5 = Up(2048, 512, 512, attn=True)  # Reduced from 1024 to 512
-        self.up4 = Up(512, 256, 256, attn=False)  # Removed attention
-        self.up3 = Up(256, 128, 128, attn=True)
-        self.up2 = Up(128, 64, 32, attn=False)   # Reduced channels
-        self.up1 = Up(64, 32, attn=False)
+        # Điều chỉnh decoder path
+        self.up5 = Up(512, 256, 256, attn=True)  # Giảm channels
+        self.up4 = Up(256, 128, 128, attn=False) 
+        self.up3 = Up(128, 64, 64, attn=True)
+        self.up2 = Up(64, 32, 32, attn=False)   
+        self.up1 = Up(32, 16, attn=False)
 
-        # Simplified final convolution with fewer channels
+        # Điều chỉnh final convolution
         self.final = nn.Sequential(
-            Conv(992, 128, 3, bn=True, relu=True),  # 32 + 64 + 128 + 256 + 480 = 960
-            Conv(128, 32, 3, bn=True, relu=True),
+            Conv(496 , 64, 3, bn=True, relu=True),  
+            Conv(64, 32, 3, bn=True, relu=True),
             Conv(32, 1, 1, bn=False, relu=False)
         )
 
         # loss function
-        self.loss_fn = DiceBCELoss()
-        self.loss_fn.set_debug_mode(False)  # Tắt debug info trong quá trình training
-        # self.loss_fn = Dice()
+        # self.loss_fn = DiceBCELoss()
+        # self.loss_fn.set_debug_mode(False)  # Tắt debug info trong quá trình training
+        self.loss_fn = Dice()
         # self.loss_fn = nn.BCEWithLogitsLoss()
         
         # Confusion matrix

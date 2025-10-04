@@ -7,7 +7,7 @@ class DiceLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceLoss, self).__init__()
 
-    def forward(self, inputs, targets, smooth=1):
+    def forward(self, inputs, targets, smooth=1, weight=None):
         
         #comment out if  model contains a sigmoid or equivalent activation layer
         inputs = F.sigmoid(inputs)       

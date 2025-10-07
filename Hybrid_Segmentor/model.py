@@ -387,10 +387,10 @@ class HybridSegmentor(pl.LightningModule):
 
         # Điều chỉnh decoder path
         self.up5 = Up(512, 256, 256, attn=True)  # Giảm channels
-        self.up4 = Up(256, 128, 128, attn=True) 
+        self.up4 = Up(256, 128, 128, attn=False) 
         self.up3 = Up(128, 64, 64, attn=True)
-        self.up2 = Up(64, 32, 32, attn=True)   
-        self.up1 = Up(32, 16, attn=True)
+        self.up2 = Up(64, 32, 32, attn=False)   
+        self.up1 = Up(32, 16, attn=False)
 
         # Điều chỉnh final convolution
         self.final = nn.Sequential(

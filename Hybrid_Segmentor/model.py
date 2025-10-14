@@ -386,17 +386,16 @@ class HybridSegmentor(pl.LightningModule):
         self.fusion4 = BiFusion_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
 
         # Điều chỉnh decoder path
-        self.up5 = Up(512, 256, 256, attn=True)  # Giảm channels
-        self.up4 = Up(256, 128, 128, attn=False) 
+        self.up5 = Up(512, 256, 256, attn=True)  
+        self.up4 = Up(256, 128, 128, attn=True) 
         self.up3 = Up(128, 64, 64, attn=True)
-        self.up2 = Up(64, 32, 32, attn=False)   
+        self.up2 = Up(64, 32, 32, attn=True)   
         self.up1 = Up(32, 16, attn=False)
 
         # Điều chỉnh final convolution
         self.final = nn.Sequential(
-            Conv(496 , 64, 3, bn=True, relu=True),  
-            Conv(64, 32, 3, bn=True, relu=True),
-            Conv(32, 1, 1, bn=False, relu=False)
+            Conv(16, 8, 3, bn=True, relu=True),
+            Conv(8, 1, 1, bn=False, relu=False)
         )
 
         # loss function
@@ -438,17 +437,9 @@ class HybridSegmentor(pl.LightningModule):
         d1 = self.up1(d2)
         
         # Upscale features to match resolution
-        decoder_features = [d1, d2, d3, d4, d5]
-        for i in range(1, len(decoder_features)):
-            decoder_features[i] = F.interpolate(
-                decoder_features[i], 
-                size=decoder_features[0].shape[2:],
-                mode='bilinear', 
-                align_corners=True
-            )
 
         # Final prediction
-        out = self.final(torch.cat(decoder_features, dim=1))
+        out = self.final(d1)
         return out, d1, d2, d3, d4, d5
         
     def training_step(self, batch, batch_idx):

@@ -5,6 +5,9 @@ from model import HybridSegmentor
 import torch
 from callback import MyPrintingCallBack, checkpoint_callback, early_stopping
 import os
+from pytorch_lightning.loggers import CSVLogger
+
+
 
 torch.set_float32_matmul_precision("medium")
 
@@ -15,19 +18,19 @@ if __name__ == "__main__":
         config.TEST_IMG_DIR, config.TEST_MASK_DIR,
         config.BATCH_SIZE, config.NUM_WORKERS, config.PIN_MEMORY,
     )   
-
+    logger = CSVLogger(save_dir="logs", name="hybrid_segmentor")
     model = HybridSegmentor(learning_rate=config.LEARNING_RATE).to(config.DEVICE)
     
     trainer = pl.Trainer(
-        logger=False,
-        enable_checkpointing=True,  # Bật lưu checkpoint
+        logger=logger,
+        enable_checkpointing=True,
         accelerator="gpu",
         min_epochs=1,
         max_epochs=config.NUM_EPOCHS,
-        precision="16-mixed", 
+        precision="16-mixed",
         callbacks=[MyPrintingCallBack(), checkpoint_callback, early_stopping],
         enable_model_summary=False,
-        log_every_n_steps=0
+        log_every_n_steps=10,
     )
     
     # Training

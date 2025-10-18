@@ -399,9 +399,9 @@ class HybridSegmentor(pl.LightningModule):
         )
 
         # loss function
-        # self.loss_fn = DiceBCELoss()
+        self.loss_fn = DiceBCELoss()
         # self.loss_fn.set_debug_mode(False)  # Tắt debug info trong quá trình training
-        self.loss_fn = DiceLoss()
+        # self.loss_fn = DiceLoss()
         # self.loss_fn = nn.BCEWithLogitsLoss()
         
         # Confusion matrix
@@ -526,7 +526,7 @@ class HybridSegmentor(pl.LightningModule):
         pred_lst = self.forward(x)
         pred = pred_lst[0]
 
-        loss = self.loss_fn(pred, y, weight=0.2)
+        loss = self.loss_fn(pred, y, weight=0.5)
         # loss_recall = 1-self.recall(pred, y)
         # loss *= loss_recall
         pred = torch.sigmoid(pred)

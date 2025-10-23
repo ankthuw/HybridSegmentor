@@ -23,7 +23,7 @@ checkpoint_callback = ModelCheckpoint(
     filename='hybrid-{epoch:02d}-{val_loss:.4f}',
     verbose=True,
     save_last=True,
-    save_top_k=3,  # Lưu 3 model tốt nhất
+    save_top_k=1,  # Lưu 3 model tốt nhất
     monitor='val_loss',
     mode='min'
 )

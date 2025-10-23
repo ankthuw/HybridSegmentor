@@ -22,7 +22,6 @@ if __name__ == "__main__":
     model = HybridSegmentor(learning_rate=config.LEARNING_RATE).to(config.DEVICE)
     
     trainer = pl.Trainer(
-        logger=logger,
         enable_checkpointing=True,
         accelerator="gpu",
         min_epochs=1,

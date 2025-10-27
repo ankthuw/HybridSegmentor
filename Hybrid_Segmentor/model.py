@@ -477,14 +477,14 @@ class HybridSegmentor(pl.LightningModule):
         self.fusion4 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)
 
         # Điều chỉnh decoder path
-        self.up4 = Up(512, 256, 256, attn=True)  # 512 -> 256
-        self.up3 = Up(256, 128, 128, attn=True)  # 256 -> 128 
-        self.up2 = Up(128, 64, 64, attn=True)    # 128 -> 64
-        self.up1 = Up(64, 32, attn=False)        # 64 -> 32
-        self.final_up = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2)
+        self.up4 = Up(512, 512, 256, attn=True)  # 512 -> 512
+        self.up3 = Up(512, 256, 128, attn=True)  # 512 -> 256 
+        self.up2 = Up(256, 128, 64, attn=True)    # 256 -> 128
+        self.up1 = Up(128, 64, attn=False)        # 128 -> 64
+        self.final_up = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)
         # Final convs
         self.final = nn.Sequential(
-            Conv(16, 8, 3, bn=True, relu=True),
+            Conv(64, 8, 3, bn=True, relu=True),
             Conv(8, 1, 1, bn=False, relu=False)
         )
 

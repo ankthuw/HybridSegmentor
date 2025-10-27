@@ -481,11 +481,11 @@ class HybridSegmentor(pl.LightningModule):
         self.up3 = Up(256, 128, 128, attn=True)  # 256 -> 128 
         self.up2 = Up(128, 64, 64, attn=True)    # 128 -> 64
         self.up1 = Up(64, 32, attn=False)        # 64 -> 32
-
+        self.final_up = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2)
         # Final convs
         self.final = nn.Sequential(
-            Conv(32, 16, 3, bn=True, relu=True),
-            Conv(16, 1, 1, bn=False, relu=False)
+            Conv(16, 8, 3, bn=True, relu=True),
+            Conv(8, 1, 1, bn=False, relu=False)
         )
 
         # loss function
@@ -524,10 +524,8 @@ class HybridSegmentor(pl.LightningModule):
         d3 = self.up3(d4, fused2)       # 256 -> 128
         d2 = self.up2(d3, fused1)       # 128 -> 64
         d1 = self.up1(d2)               # 64 -> 32
-        out = self.final(d1)            # 32 -> 1
-
-        # Final prediction
-        out = self.final(d1)
+        d0 = self.final_up(d1)          # 32 -> 16
+        out = self.final(d0)            # 16 -> 1
         return out, d1, d2, d3, d4
         
     def training_step(self, batch, batch_idx):

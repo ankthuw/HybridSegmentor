@@ -263,12 +263,36 @@ class CrackAM(nn.Module):
         x_se = xtmp.mean((2), keepdim=True).unsqueeze(-1)
         x_se = self.fc(x_se)
         return x * self.gate(x_se)   
-class BiFusion_CrackAM_block(nn.Module):
+
+class CrackSPM(nn.Module):
+    def __init__(self, kernel_size=7):
+        super().__init__()
+        # Tạo tensor gồm trung bình và cực đại theo kênh
+        self.compress = lambda x: torch.cat(
+            (torch.mean(x, dim=1, keepdim=True),
+             torch.max(x, dim=1, keepdim=True)[0]),
+            dim=1
+        )
+        # Hai nhánh strip pooling: dọc (h) và ngang (w)
+        self.conv_h = nn.Conv2d(2, 1, kernel_size=(kernel_size, 1),
+                                padding=(kernel_size // 2, 0))
+        self.conv_w = nn.Conv2d(2, 1, kernel_size=(1, kernel_size),
+                                padding=(0, kernel_size // 2))
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x_compress = self.compress(x)  # [B, 2, H, W]
+        h_attn = self.conv_h(x_compress)
+        w_attn = self.conv_w(x_compress)
+        attn = self.sigmoid(h_attn + w_attn)
+        return x * attn
+
+class BiFusion_CrackAM_CrackSPM_block(nn.Module):
     def __init__(self, ch_1, ch_2, r_2, ch_int, ch_out, drop_rate=0.):
         """
-        Phiên bản BiFusion kết hợp với CrackAM.
+        Phiên bản BiFusion kết hợp với CrackAM và CrackSPM.
         CrackAM thay thế cho cơ chế channel attention (SE) ban đầu trên nhánh 'x'.
-        
+        CrackSPM thay thế cho cơ chế spatial attention (SAM) ban đầu trên nhánh 'g'.
         Args:
             ch_1 (int): Số kênh của đầu vào 'g' (từ CNN, ví dụ ResNet)
             ch_2 (int): Số kênh của đầu vào 'x' (từ Transformer, ví dụ SegFormer)
@@ -278,12 +302,11 @@ class BiFusion_CrackAM_block(nn.Module):
             ch_out (int): Số kênh đầu ra
             drop_rate (float): Tỷ lệ dropout
         """
-        super(BiFusion_CrackAM_block, self).__init__()
+        super(BiFusion_CrackAM_CrackSPM_block, self).__init__()
 
         # --- Spatial attention cho nhánh 'g' (CNN) - Giữ nguyên ---
-        self.compress = ChannelPool()
-        self.spatial = Conv(2, 1, 7, bn=True, relu=False, bias=False)
-
+        self.crack_spm = CrackSPM(kernel_size=7)
+        
         # --- Channel attention cho nhánh 'x' (Transformer) - THAY THẾ BẰNG CRACKAM ---
         # Các dòng SE cũ đã bị xóa (self.fc1, self.fc2)
         self.crack_am = CrackAM(channels=ch_2)
@@ -311,10 +334,7 @@ class BiFusion_CrackAM_block(nn.Module):
         bp = self.W(W_g * W_x) # Tích chập (element-wise product)
 
         # --- Spatial attention cho nhánh 'g' (CNN) - Giữ nguyên ---
-        g_in = g
-        g = self.compress(g)     # [N, C, H, W] -> [N, 2, H, W]
-        g = self.spatial(g)      # [N, 2, H, W] -> [N, 1, H, W]
-        g = self.sigmoid(g) * g_in # Áp dụng mặt nạ spatial
+        g = self.crack_spm(g)
 
         # --- Channel attention cho nhánh 'x' (Transformer) - SỬ DỤNG CRACKAM ---
         # Phần code SE cũ đã được thay thế bằng một dòng duy nhất:
@@ -459,10 +479,10 @@ class HybridSegmentor(pl.LightningModule):
         self.cnn_encoder = ResNetEncoder()
 
         # Điều chỉnh các BiFusion blocks
-        self.fusion1 = BiFusion_CrackAM_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
-        self.fusion2 = BiFusion_CrackAM_block(ch_1=64, ch_2=128, r_2=4, ch_int=64, ch_out=64)    
-        self.fusion3 = BiFusion_CrackAM_block(ch_1=128, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
-        self.fusion4 = BiFusion_CrackAM_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
+        self.fusion1 = BiFusion_CrackAM_CrackSPM_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
+        self.fusion2 = BiFusion_CrackAM_CrackSPM_block(ch_1=64, ch_2=128, r_2=4, ch_int=64, ch_out=64)    
+        self.fusion3 = BiFusion_CrackAM_CrackSPM_block(ch_1=128, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
+        self.fusion4 = BiFusion_CrackAM_CrackSPM_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
 
         # Điều chỉnh decoder path
         self.up5 = Up(512, 256, 256, attn=True)  # Giảm channels

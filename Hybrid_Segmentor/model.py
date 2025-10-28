@@ -27,11 +27,9 @@ import torchvision.transforms.functional as TF
 import config
 from metric import DiceBCELoss, DiceLoss
 
+
+
 DEVICE = config.DEVICE
-
-
-
-# === Mix Transformer Encoder ===
 
 # Layer Normalisation
 class LayerNorm2d(nn.LayerNorm):
@@ -43,213 +41,136 @@ class LayerNorm2d(nn.LayerNorm):
     
 # Depth-wise CNN
 class DepthWiseConv(nn.Module):
-    """Depthwise Separable Convolution"""
     def __init__(self, in_dim, out_dim, kernel, padding, stride=1, bias=True):
-        super().__init__()
+        super(DepthWiseConv, self).__init__()
         # Depthwise Convolution
-        self.dw_conv = nn.Conv2d(
-            in_channels=in_dim, 
-            out_channels=in_dim,
-            kernel_size=kernel, 
-            stride=stride, 
-            padding=padding, 
-            groups=in_dim, 
-            bias=bias
-        )
+        self.DW_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim,
+                                 kernel_size=kernel, stride=stride, 
+                                 padding=padding, groups=in_dim, bias=bias)
         # Pointwise Convolution
-        self.pw_conv = nn.Conv2d(
-            in_channels=in_dim, 
-            out_channels=out_dim,
-            kernel_size=1, 
-            bias=bias
-        )
+        self.PW_conv = nn.Conv2d(in_channels=in_dim, out_channels=out_dim,
+                                 kernel_size=1, bias=bias)
     
     def forward(self, x):
-        x = self.dw_conv(x)
-        x = self.pw_conv(x)
+        x = self.DW_conv(x)
+        x = self.PW_conv(x)
+
         return x
         
 
 class OverlapPatchEmbedding(nn.Module):
-    """Overlapping Patch Embedding with Layer Normalization"""
     def __init__(self, kernel, stride, padding, in_dim, out_dim):
-        super().__init__()
-        self.proj = nn.Conv2d(
-            in_dim, 
-            out_dim, 
-            kernel_size=kernel, 
-            stride=stride, 
-            padding=padding
-        )
-        self.norm = LayerNorm2d(out_dim)
+        super(OverlapPatchEmbedding, self).__init__()
+        self.overlap_patches = nn.Unfold(kernel_size=kernel, stride=stride, padding=padding)
+        self.embedding = nn.Conv2d(in_dim*kernel**2, out_dim, 1)
 
     def forward(self, x):
-        x = self.proj(x)
-        x = self.norm(x)
+        h, w = x.shape[-2:]
+        x = self.overlap_patches(x)
+        n_patches = x.shape[-1]
+        divider = int(sqrt(h*w / n_patches))
+        x = rearrange(x, 'b c (h w) -> b c h w', h = h//divider)
+        x = self.embedding(x)
+
         return x
 
-class EfficientSelfAttention(nn.Module):
-    """Efficient Self-Attention with Sequence Reduction"""
+class EfficientMSA(nn.Module):
+    # same size of input and output
     def __init__(self, dim, n_heads, reduction_ratio):
-        super().__init__()
-        self.norm = LayerNorm2d(dim)
-        
-        # Sequence reduction for K and V
-        self.sr = None
-        if reduction_ratio > 1:
-            self.sr = nn.Conv2d(
-                dim, dim, 
-                kernel_size=reduction_ratio, 
-                stride=reduction_ratio
-            )
-            self.sr_norm = LayerNorm2d(dim)
-        
-        self.attention = nn.MultiheadAttention(
-            embed_dim=dim, 
-            num_heads=n_heads, 
-            batch_first=True
-        )
+        super(EfficientMSA, self).__init__()
+        self.reshaping_k = nn.Conv2d(dim, dim, kernel_size=reduction_ratio, stride=reduction_ratio)
+        self.reshaping_v = nn.Conv2d(dim, dim, kernel_size=reduction_ratio, stride=reduction_ratio)
+        self.attention = nn.MultiheadAttention(embed_dim=dim, num_heads=n_heads, batch_first=True)
 
     def forward(self, x):
-        b, c, h, w = x.shape
-        
-        # Layer Norm
-        x_norm = self.norm(x)
-        
-        # Query
-        q = rearrange(x_norm, "b c h w -> b (h w) c")
-        
-        # Key and Value with reduction
-        if self.sr is not None:
-            kv = self.sr(x_norm)
-            kv = self.sr_norm(kv)
-            kv = rearrange(kv, "b c h w -> b (h w) c")
-        else:
-            kv = q
-        
-        # Self-Attention
-        attn_out, _ = self.attention(q, kv, kv)
-        attn_out = rearrange(attn_out, "b (h w) c -> b c h w", h=h, w=w)
-        
-        return attn_out
+        n, c, h, w = x.shape
+        LN = LayerNorm2d(c).to(device=DEVICE)
+        x = LN(x)
+        reshaped_k = self.reshaping_k(x)
+        reshaped_v = self.reshaping_v(x)
+        reshaped_k = rearrange(reshaped_k, "b c h w -> b (h w) c") # reshape (batch, sequence_length, channels) for attention
+        reshaped_v = rearrange(reshaped_v, "b c h w -> b (h w) c") # reshape (batch, sequence_length, channels) for attention
+        q = rearrange(x, "b c h w -> b (h w) c")
+        output, output_weights = self.attention(q, reshaped_k, reshaped_v)
+        output = rearrange(output, "b (h w) c -> b c h w", h=h, w=w)
+
+        return output
+
 
 class MixFFN(nn.Module):
-    """Mix-FFN with Depthwise Convolution"""
+    # same size of inputs and outputs
     def __init__(self, dim, expansion_factor):
-        super().__init__()
-        hidden_dim = dim * expansion_factor
-        
-        self.norm = LayerNorm2d(dim)
-        self.fc1 = nn.Conv2d(dim, hidden_dim, 1)
-        self.dw_conv = DepthWiseConv(
-            hidden_dim, hidden_dim, 
-            kernel=3, padding=1
+        super(MixFFN, self).__init__()
+        latent_dim = dim*expansion_factor
+        self.mixffn = nn.Sequential(
+            nn.Conv2d(dim, latent_dim, 1),
+            DepthWiseConv(latent_dim, latent_dim, kernel=3, padding=1),
+            nn.GELU(),
+            nn.Conv2d(latent_dim, dim, 1)
         )
-        self.act = nn.GELU()
-        self.fc2 = nn.Conv2d(hidden_dim, dim, 1)
-    
     def forward(self, x):
-        x = self.norm(x)
-        x = self.fc1(x)
-        x = self.dw_conv(x)
-        x = self.act(x)
-        x = self.fc2(x)
+        n, c, h, w = x.shape
+        LN = LayerNorm2d(c).to(device=DEVICE)
+        x = LN(x)
+        x = self.mixffn(x)
         return x
     
-class TransformerBlock(nn.Module):
-    """Transformer Block = Efficient Attention + Mix-FFN"""
-    def __init__(self, dim, n_heads, expansion, reduction_ratio):
-        super().__init__()
-        self.attn = EfficientSelfAttention(dim, n_heads, reduction_ratio)
-        self.ffn = MixFFN(dim, expansion)
-    
-    def forward(self, x):
-        # Attention with residual
-        x = x + self.attn(x)
-        # Feed-forward with residual
-        x = x + self.ffn(x)
-        return x
-
 class MiT(nn.Module):
-    """Mix Transformer (MiT) - SegFormer Encoder"""
-    def __init__(self, in_channels, dims, n_heads, expansion, reduction_ratios, n_layers):
-        super().__init__()
-        
-        # Stage configurations
-        # (kernel_size, stride, padding) for each stage
-        patch_configs = [
-            (7, 4, 3),  # Stage 1: 1/4
-            (3, 2, 1),  # Stage 2: 1/8
-            (3, 2, 1),  # Stage 3: 1/16
-            (3, 2, 1),  # Stage 4: 1/32
-        ]
-        
-        # Build stages
-        self.stages = nn.ModuleList()
-        
-        input_dim = in_channels
-        for i, (dim, n_head, exp, ratio, n_layer) in enumerate(
-            zip(dims, n_heads, expansion, reduction_ratios, n_layers)
-        ):
-            kernel, stride, padding = patch_configs[i]
+    def __init__(self, channels, dims, n_heads, expansion, reduction_ratio, n_layers):
+        super(MiT, self).__init__()
+        kernel_stride_pad = ((3, 2, 1), (3, 2, 1), (3, 2, 1), (3, 2, 1), (3, 2, 1))
+        dims = (channels, *dims)
+        dim_pairs = list(zip(dims[:-1], dims[1:]))
+
+        self.stages = nn.ModuleList([])
+
+        for (in_dim, out_dim), (kernel, stride, padding), n_layers, expansion, n_heads, reduction_ratio in zip(dim_pairs, kernel_stride_pad, n_layers, expansion, n_heads, reduction_ratio):
+            overlapping = OverlapPatchEmbedding(kernel, stride, padding, in_dim, out_dim)
+            layers = nn.ModuleList([])
             
-            # Patch embedding
-            patch_embed = OverlapPatchEmbedding(
-                kernel, stride, padding, input_dim, dim
-            )
-            
-            # Transformer blocks
-            blocks = nn.ModuleList([
-                TransformerBlock(dim, n_head, exp, ratio)
-                for _ in range(n_layer)
-            ])
-            
-            self.stages.append(nn.ModuleList([patch_embed, blocks]))
-            input_dim = dim
+            for _ in range(n_layers):
+                layers.append(nn.ModuleList([EfficientMSA(dim=out_dim, n_heads=n_heads, reduction_ratio=reduction_ratio),
+                              MixFFN(dim=out_dim, expansion_factor=expansion)]))
+            self.stages.append(nn.ModuleList([overlapping, layers]))
 
     def forward(self, x):
-        """
-        Returns multi-scale features from all stages
-        """
-        outputs = []
-        
-        for patch_embed, blocks in self.stages:
-            # Patch embedding
-            x = patch_embed(x)
-            
-            # Transformer blocks
-            for block in blocks:
-                x = block(x)
-            
-            outputs.append(x)
-        
-        return outputs
+        # h, w = x.shape[-2:]
+        layer_outputs = []
+        for overlapping, layers in self.stages:
+            x = overlapping(x)  # (b, c x kernel x kernel, num_patches)
+            for (attension, ffn) in layers:  # attention, feed forward
+                x = attension(x) + x  # skip connection
+                x = ffn(x) + x
+
+            layer_outputs.append(x)  # multi scale features
+
+        return layer_outputs
     
 
 
-# === ResNet Encoder ===
-
+# resnet_encoder = resnet50(weights=ResNet50_Weights.DEFAULT)
 resnet_encoder = resnet18(weights=ResNet18_Weights.DEFAULT)
+
+# resnet_encoder = resnet50()
 class ResNetEncoder(nn.Module):
     def __init__(self, encoder = resnet_encoder):
         super(ResNetEncoder, self).__init__()
-        self.stem = nn.Sequential(encoder.conv1, encoder.bn1, encoder.relu) # 64x128x128
-        self.maxpool = encoder.maxpool
-        
-        self.layer1 = encoder.layer1 # 64x64x64  (thay vì 256)
-        self.layer2 = encoder.layer2 # 128x32x32 (thay vì 512)
-        self.layer3 = encoder.layer3 # 256x16x16 (thay vì 1024)
-        self.layer4 = encoder.layer4 # 512x8x8   (thay vì 2048)
+        self.encoder1 = nn.Sequential(encoder.conv1, encoder.bn1, encoder.relu) # 64x128x128
+        self.mp = encoder.maxpool
+        self.encoder2 = encoder.layer1 # 64x64x64  (thay vì 256)
+        self.encoder3 = encoder.layer2 # 128x32x32 (thay vì 512)
+        self.encoder4 = encoder.layer3 # 256x16x16 (thay vì 1024)
+        self.encoder5 = encoder.layer4 # 512x8x8   (thay vì 2048)
 
     def forward(self,x):
-        x = self.stem(x)
-        x = self.maxpool(x)
-        output1 = self.layer1(x)
-        output2 = self.layer2(output1)
-        output3 = self.layer3(output2)
-        output4 = self.layer4(output3)
+        output1 = self.encoder1(x)
+        output2 = self.mp(output1)
+        output2 = self.encoder2(output2)
+        output3 = self.encoder3(output2)
+        output4 = self.encoder4(output3)
+        output5 = self.encoder5(output4)
 
-        return output1, output2, output3, output4
+        return output1, output2, output3, output4, output5
 
 class ChannelPool(nn.Module):
     def forward(self, x):
@@ -276,17 +197,7 @@ class Conv(nn.Module):
             x = self.relu(x)
         return x
 
-
-# === Bi-Fusion Block ===
 class BiFusion_block(nn.Module):
-    """
-    ch_1: CNN branch channels
-    ch_2: Transformer branch channels
-    r_2: reduction ratio for channel attention
-    ch_int: intermediate channels for bilinear pooling
-    ch_out: output channels
-    """
-    
     def __init__(self, ch_1, ch_2, r_2, ch_int, ch_out, drop_rate=0.):
         super(BiFusion_block, self).__init__()
 
@@ -332,6 +243,85 @@ class BiFusion_block(nn.Module):
         x = self.relu(x)
         x = self.fc2(x)
         x = self.sigmoid(x) * x_in
+        fuse = self.residual(torch.cat([g, x, bp], 1))
+
+        if self.drop_rate > 0:
+            return self.dropout(fuse)
+        else:
+            return fuse
+
+class CrackAM(nn.Module):
+    def __init__(self, channels, rate=1, add_maxpool=False, **_):
+        super(CrackAM, self).__init__()
+        self.fc = nn.Conv2d(int(channels), channels, kernel_size=1, padding=0)
+        self.gate = nn.Sigmoid()
+
+    def forward(self, x):
+        max_pool_h = torch.max(x, dim=3)[0] # (N, C, H, 1)
+        max_pool_v = torch.max(x, dim=2)[0] # (N, C, 1, W)
+        xtmp = torch.concat((max_pool_h, max_pool_v), dim=2)  # Shape: [batch_size, channels, width+height]
+        x_se = xtmp.mean((2), keepdim=True).unsqueeze(-1)
+        x_se = self.fc(x_se)
+        return x * self.gate(x_se)   
+class BiFusion_CrackAM_block(nn.Module):
+    def __init__(self, ch_1, ch_2, r_2, ch_int, ch_out, drop_rate=0.):
+        """
+        Phiên bản BiFusion kết hợp với CrackAM.
+        CrackAM thay thế cho cơ chế channel attention (SE) ban đầu trên nhánh 'x'.
+        
+        Args:
+            ch_1 (int): Số kênh của đầu vào 'g' (từ CNN, ví dụ ResNet)
+            ch_2 (int): Số kênh của đầu vào 'x' (từ Transformer, ví dụ SegFormer)
+            r_2 (int): Tỷ lệ giảm kênh (reduction ratio) - không còn được CrackAM sử dụng
+                       nhưng giữ lại để tương thích (hoặc có thể bỏ đi).
+            ch_int (int): Số kênh trung gian cho bi-linear pooling
+            ch_out (int): Số kênh đầu ra
+            drop_rate (float): Tỷ lệ dropout
+        """
+        super(BiFusion_CrackAM_block, self).__init__()
+
+        # --- Spatial attention cho nhánh 'g' (CNN) - Giữ nguyên ---
+        self.compress = ChannelPool()
+        self.spatial = Conv(2, 1, 7, bn=True, relu=False, bias=False)
+
+        # --- Channel attention cho nhánh 'x' (Transformer) - THAY THẾ BẰNG CRACKAM ---
+        # Các dòng SE cũ đã bị xóa (self.fc1, self.fc2)
+        self.crack_am = CrackAM(channels=ch_2)
+
+        # --- Bi-linear modelling - Giữ nguyên ---
+        self.W_g = Conv(ch_1, ch_int, 1, bn=True, relu=False)
+        self.W_x = Conv(ch_2, ch_int, 1, bn=True, relu=False)
+        self.W = Conv(ch_int, ch_int, 3, bn=True, relu=True)
+
+        # --- Các thành phần khác - Giữ nguyên ---
+        self.relu = nn.ReLU(inplace=True)
+        self.sigmoid = nn.Sigmoid()
+        
+        # Lớp residual sẽ nhận input từ 3 nhánh đã qua attention và pooling
+        self.residual = Residual(ch_1 + ch_2 + ch_int, ch_out)
+
+        self.dropout = nn.Dropout2d(drop_rate)
+        self.drop_rate = drop_rate
+
+        
+    def forward(self, g, x):
+        # --- Bi-linear pooling - Giữ nguyên ---
+        W_g = self.W_g(g)
+        W_x = self.W_x(x)
+        bp = self.W(W_g * W_x) # Tích chập (element-wise product)
+
+        # --- Spatial attention cho nhánh 'g' (CNN) - Giữ nguyên ---
+        g_in = g
+        g = self.compress(g)     # [N, C, H, W] -> [N, 2, H, W]
+        g = self.spatial(g)      # [N, 2, H, W] -> [N, 1, H, W]
+        g = self.sigmoid(g) * g_in # Áp dụng mặt nạ spatial
+
+        # --- Channel attention cho nhánh 'x' (Transformer) - SỬ DỤNG CRACKAM ---
+        # Phần code SE cũ đã được thay thế bằng một dòng duy nhất:
+        x = self.crack_am(x) # Áp dụng CrackAM
+                             # (module này đã bao gồm phép nhân x * self.gate(x_se))
+
+        # --- Final fusion - Giữ nguyên ---
         fuse = self.residual(torch.cat([g, x, bp], 1))
 
         if self.drop_rate > 0:
@@ -459,30 +449,29 @@ class Residual(nn.Module):
     
 
 class HybridSegmentor(pl.LightningModule):
-    def __init__(
-        self, channels=3,
-        dims=(64, 128, 256, 512), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
-        expansion=(8, 8, 4, 4), reduction_ratios=(8, 4, 2, 1),
-        n_layers=(2, 2, 2, 2), learning_rate=config.LEARNING_RATE):
+    def __init__(self, channels=3, dims=(64, 128, 256, 512), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
+                 expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), 
+                 learning_rate=config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()
         
-        # encoder
-        self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratios, n_layers)
+        # Keep encoders
+        self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
         self.cnn_encoder = ResNetEncoder()
 
         # Điều chỉnh các BiFusion blocks
-        self.fusion1 = BiFusion_block(ch_1=64, ch_2=64, r_2=4, ch_int=64, ch_out=64)        
-        self.fusion2 = BiFusion_block(ch_1=128, ch_2=128, r_2=4, ch_int=128, ch_out=128)    
-        self.fusion3 = BiFusion_block(ch_1=256, ch_2=256, r_2=4, ch_int=256, ch_out=256)    
-        self.fusion4 = BiFusion_block(ch_1=512, ch_2=512, r_2=4, ch_int=512, ch_out=512)
+        self.fusion1 = BiFusion_CrackAM_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
+        self.fusion2 = BiFusion_CrackAM_block(ch_1=64, ch_2=128, r_2=4, ch_int=64, ch_out=64)    
+        self.fusion3 = BiFusion_CrackAM_block(ch_1=128, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
+        self.fusion4 = BiFusion_CrackAM_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
 
         # Điều chỉnh decoder path
-        self.up4 = Up(512, 512, 256, attn=True)  # 512 -> 512
-        self.up3 = Up(512, 256, 128, attn=True)  # 512 -> 256 
-        self.up2 = Up(256, 128, 64, attn=True)    # 256 -> 128
-        self.up1 = Up(128, 64, attn=False)        # 128 -> 64
-        self.final_up = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)
-        # Final convs
+        self.up5 = Up(512, 256, 256, attn=True)  # Giảm channels
+        self.up4 = Up(256, 128, 128, attn=True) 
+        self.up3 = Up(128, 64, 64, attn=True)
+        self.up2 = Up(64, 64, 32, attn=True)   
+        self.up1 = Up(64, 64, attn=False)
+
+        # Điều chỉnh final convolution
         self.final = nn.Sequential(
             Conv(64, 8, 3, bn=True, relu=True),
             Conv(8, 1, 1, bn=False, relu=False)
@@ -510,23 +499,35 @@ class HybridSegmentor(pl.LightningModule):
 
     def forward(self, x):
         # Encoder paths
-        mit_feats = self.mix_transformer(x)
-        cnn_feats = self.cnn_encoder(x)
-
-        # Fuse features - giữ nguyên số kênh
-        fused1 = self.fusion1(cnn_feats[0], mit_feats[0])  # 64x64x64
-        fused2 = self.fusion2(cnn_feats[1], mit_feats[1])  # 128x32x32
-        fused3 = self.fusion3(cnn_feats[2], mit_feats[2])  # 256x16x16
-        fused4 = self.fusion4(cnn_feats[3], mit_feats[3])  # 512x8x8
+        mit_features = self.mix_transformer(x)
+        cnn_features = self.cnn_encoder(x)
         
-        # Decoder path với số kênh giảm dần
-        d4 = self.up4(fused4, fused3)   # 512 -> 256
-        d3 = self.up3(d4, fused2)       # 256 -> 128
-        d2 = self.up2(d3, fused1)       # 128 -> 64
-        d1 = self.up1(d2)               # 64 -> 32
-        d0 = self.final_up(d1)          # 32 -> 16
-        out = self.final(d0)            # 16 -> 1
-        return out, d1, d2, d3, d4
+        # Fuse features
+        fused1 = self.fusion1(cnn_features[0], mit_features[0])
+        fused2 = self.fusion2(cnn_features[1], mit_features[1])
+        fused3 = self.fusion3(cnn_features[2], mit_features[2])
+        fused4 = self.fusion4(cnn_features[3], mit_features[3])
+        
+        # Simplified decoder path
+        d5 = self.up5(cnn_features[4], fused4)
+        d4 = self.up4(d5, fused3)
+        d3 = self.up3(d4, fused2)
+        d2 = self.up2(d3, fused1)
+        d1 = self.up1(d2)
+        
+        # # Upscale features to match resolution
+        # decoder_features = [d1, d2, d3, d4, d5]
+        # for i in range(1, len(decoder_features)):
+        #     decoder_features[i] = F.interpolate(
+        #         decoder_features[i], 
+        #         size=decoder_features[0].shape[2:],
+        #         mode='bilinear', 
+        #         align_corners=True
+        #     )
+
+        # Final prediction
+        out = self.final(d1)
+        return out, d1, d2, d3, d4, d5
         
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -575,6 +576,7 @@ class HybridSegmentor(pl.LightningModule):
         
         return loss
 
+    
     def test_step(self, batch, batch_idx):
         loss, pred, y = self._common_step(batch, batch_idx)
         accuracy = self.accuracy(pred, y)
@@ -608,24 +610,7 @@ class HybridSegmentor(pl.LightningModule):
         # loss *= loss_recall
         pred = torch.sigmoid(pred)
         pred = (pred > 0.5).float()
-        
-        # if not self.training:
-        #     # Calculate metrics
-        #     accuracy = self.accuracy(pred, y)
-        #     f1_score = self.f1_score(pred, y)
-        #     precision = self.precision(pred, y)
-        #     recall = self.recall(pred, y)
-            
-        #     print("\n=== After Processing ===")
-        #     print(f"Pred min/max after sigmoid: [{pred.min().item():.4f}, {pred.max().item():.4f}]")
-        #     print(f"Pred unique values after threshold: {torch.unique(pred).tolist()}")
-        #     print(f"Prediction sum: {pred.sum().item()}")
-        #     print(f"Accuracy: {accuracy:.4f}")
-        #     print(f"F1 Score: {f1_score:.4f}")
-        #     print(f"Precision: {precision:.4f}")
-        #     print(f"Recall: {recall:.4f}")
-        #     print("========================\n")
-        
+
         return loss, pred, y
     
     def predict_step(self, batch, batch_idx):

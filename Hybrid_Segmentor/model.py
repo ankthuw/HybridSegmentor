@@ -581,7 +581,7 @@ class Residual(nn.Module):
     
 
 class HybridSegmentor(pl.LightningModule):
-    def __init__(self, channels=3, dims=(32, 54, 160, 256), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
+    def __init__(self, channels=3, dims=(32, 64, 160, 256), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
                  expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), 
                  learning_rate=config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()

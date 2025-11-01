@@ -282,7 +282,7 @@ class ResNetEncoder(nn.Module):
         output4 = self.encoder4(output3)
         output5 = self.encoder5(output4)
 
-        return output1, output2, output3, output4, output5
+        return output2, output3, output4, output5
 
 class ChannelPool(nn.Module):
     def forward(self, x):
@@ -581,20 +581,20 @@ class Residual(nn.Module):
     
 
 class HybridSegmentor(pl.LightningModule):
-    def __init__(self, channels=3, dims=(32, 64, 160, 256), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
+    def __init__(self, channels=3, dims=(64, 128, 320, 512), n_heads=(1, 2, 8, 8),  # dims được điều chỉnh
                  expansion=(8, 8, 4, 4), reduction_ratio=(8, 4, 2, 1), n_layers=(2, 2, 2, 2), 
                  learning_rate=config.LEARNING_RATE):
         super(HybridSegmentor, self).__init__()
         
         # Keep encoders
         self.mix_transformer = MiT(channels, dims, n_heads, expansion, reduction_ratio, n_layers)
-        self.cnn_encoder = MobileNetV3LargeBackbone(pretrained=True)
+        self.cnn_encoder = ResNetEncoder()
 
         # Điều chỉnh các BiFusion blocks
-        self.fusion1 = BiFusion_CrackAM_CrackSPM_block(ch_1=24, ch_2=32, r_2=4, ch_int=32, ch_out=64)        
-        self.fusion2 = BiFusion_CrackAM_CrackSPM_block(ch_1=40, ch_2=64, r_2=4, ch_int=64, ch_out=128)    
-        self.fusion3 = BiFusion_CrackAM_CrackSPM_block(ch_1=112, ch_2=160, r_2=4, ch_int=128, ch_out=256)    
-        self.fusion4 = BiFusion_CrackAM_CrackSPM_block(ch_1=960, ch_2=256, r_2=4, ch_int=256, ch_out=512)
+        self.fusion1 = BiFusion_CrackAM_CrackSPM_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=64)        
+        self.fusion2 = BiFusion_CrackAM_CrackSPM_block(ch_1=128, ch_2=128, r_2=4, ch_int=64, ch_out=128)    
+        self.fusion3 = BiFusion_CrackAM_CrackSPM_block(ch_1=256, ch_2=320, r_2=4, ch_int=128, ch_out=256)    
+        self.fusion4 = BiFusion_CrackAM_CrackSPM_block(ch_1=512, ch_2=512, r_2=4, ch_int=256, ch_out=512)
 
         # Điều chỉnh decoder path
         self.up4 = Up(512, 256, 256, attn=True)  # Giảm channels

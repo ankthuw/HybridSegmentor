@@ -263,65 +263,73 @@ class CrackAM(nn.Module):
         x_se = xtmp.mean((2), keepdim=True).unsqueeze(-1)
         x_se = self.fc(x_se)
         return x * self.gate(x_se)   
-class BiFusion_CrackAM_block(nn.Module):
+    
+
+class CrackSPAM(nn.Module):
+    def __init__(self, kernel_size=7):
+        super().__init__()
+        # Tạo tensor gồm trung bình và cực đại theo kênh
+        self.compress = lambda x: torch.cat(
+            (torch.mean(x, dim=1, keepdim=True),
+             torch.max(x, dim=1, keepdim=True)[0]),
+            dim=1
+        )
+        # Hai nhánh strip pooling: dọc (h) và ngang (w)
+        self.conv_h = nn.Conv2d(2, 1, kernel_size=(kernel_size, 1),
+                                padding=(kernel_size // 2, 0))
+        self.conv_w = nn.Conv2d(2, 1, kernel_size=(1, kernel_size),
+                                padding=(0, kernel_size // 2))
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x_compress = self.compress(x)  # [B, 2, H, W]
+        h_attn = self.conv_h(x_compress)
+        w_attn = self.conv_w(x_compress)
+        attn = self.sigmoid(h_attn + w_attn)
+        return x * attn
+
+class BiFusion_CrackSPAM_block(nn.Module):
     def __init__(self, ch_1, ch_2, r_2, ch_int, ch_out, drop_rate=0.):
-        """
-        Phiên bản BiFusion kết hợp với CrackAM.
-        CrackAM thay thế cho cơ chế channel attention (SE) ban đầu trên nhánh 'x'.
-        
-        Args:
-            ch_1 (int): Số kênh của đầu vào 'g' (từ CNN, ví dụ ResNet)
-            ch_2 (int): Số kênh của đầu vào 'x' (từ Transformer, ví dụ SegFormer)
-            r_2 (int): Tỷ lệ giảm kênh (reduction ratio) - không còn được CrackAM sử dụng
-                       nhưng giữ lại để tương thích (hoặc có thể bỏ đi).
-            ch_int (int): Số kênh trung gian cho bi-linear pooling
-            ch_out (int): Số kênh đầu ra
-            drop_rate (float): Tỷ lệ dropout
-        """
-        super(BiFusion_CrackAM_block, self).__init__()
+        super(BiFusion_CrackSPAM_block, self).__init__()
 
-        # --- Spatial attention cho nhánh 'g' (CNN) - Giữ nguyên ---
-        self.compress = ChannelPool()
-        self.spatial = Conv(2, 1, 7, bn=True, relu=False, bias=False)
+        # channel attention for F_g, use SE Block
+        self.fc1 = nn.Conv2d(ch_2, ch_2 // r_2, kernel_size=1)
+        self.relu = nn.ReLU(inplace=True)
+        self.fc2 = nn.Conv2d(ch_2 // r_2, ch_2, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
 
-        # --- Channel attention cho nhánh 'x' (Transformer) - THAY THẾ BẰNG CRACKAM ---
-        # Các dòng SE cũ đã bị xóa (self.fc1, self.fc2)
-        self.crack_am = CrackAM(channels=ch_2)
+        # spatial attention for F_l
+        self.crack_spam = CrackSPAM(kernel_size=7)
 
-        # --- Bi-linear modelling - Giữ nguyên ---
+        # bi-linear modelling for both
         self.W_g = Conv(ch_1, ch_int, 1, bn=True, relu=False)
         self.W_x = Conv(ch_2, ch_int, 1, bn=True, relu=False)
         self.W = Conv(ch_int, ch_int, 3, bn=True, relu=True)
 
-        # --- Các thành phần khác - Giữ nguyên ---
         self.relu = nn.ReLU(inplace=True)
-        self.sigmoid = nn.Sigmoid()
-        
-        # Lớp residual sẽ nhận input từ 3 nhánh đã qua attention và pooling
-        self.residual = Residual(ch_1 + ch_2 + ch_int, ch_out)
+
+        self.residual = Residual(ch_1+ch_2+ch_int, ch_out)
 
         self.dropout = nn.Dropout2d(drop_rate)
         self.drop_rate = drop_rate
 
         
     def forward(self, g, x):
-        # --- Bi-linear pooling - Giữ nguyên ---
+        # bilinear pooling
         W_g = self.W_g(g)
         W_x = self.W_x(x)
-        bp = self.W(W_g * W_x) # Tích chập (element-wise product)
+        bp = self.W(W_g*W_x)
 
-        # --- Spatial attention cho nhánh 'g' (CNN) - Giữ nguyên ---
-        g_in = g
-        g = self.compress(g)     # [N, C, H, W] -> [N, 2, H, W]
-        g = self.spatial(g)      # [N, 2, H, W] -> [N, 1, H, W]
-        g = self.sigmoid(g) * g_in # Áp dụng mặt nạ spatial
+        # spatial attention for cnn branch
+        g = self.crack_spam(g)
 
-        # --- Channel attention cho nhánh 'x' (Transformer) - SỬ DỤNG CRACKAM ---
-        # Phần code SE cũ đã được thay thế bằng một dòng duy nhất:
-        x = self.crack_am(x) # Áp dụng CrackAM
-                             # (module này đã bao gồm phép nhân x * self.gate(x_se))
-
-        # --- Final fusion - Giữ nguyên ---
+        # channel attetion for transformer branch
+        x_in = x
+        x = x.mean((2, 3), keepdim=True)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x) * x_in
         fuse = self.residual(torch.cat([g, x, bp], 1))
 
         if self.drop_rate > 0:
@@ -459,10 +467,10 @@ class HybridSegmentor(pl.LightningModule):
         self.cnn_encoder = ResNetEncoder()
 
         # Điều chỉnh các BiFusion blocks
-        self.fusion1 = BiFusion_CrackAM_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
-        self.fusion2 = BiFusion_CrackAM_block(ch_1=64, ch_2=128, r_2=4, ch_int=64, ch_out=64)    
-        self.fusion3 = BiFusion_CrackAM_block(ch_1=128, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
-        self.fusion4 = BiFusion_CrackAM_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
+        self.fusion1 = BiFusion_CrackSPAM_block(ch_1=64, ch_2=64, r_2=4, ch_int=32, ch_out=32)        
+        self.fusion2 = BiFusion_CrackSPAM_block(ch_1=64, ch_2=128, r_2=4, ch_int=64, ch_out=64)    
+        self.fusion3 = BiFusion_CrackSPAM_block(ch_1=128, ch_2=256, r_2=4, ch_int=128, ch_out=128)    
+        self.fusion4 = BiFusion_CrackSPAM_block(ch_1=256, ch_2=512, r_2=4, ch_int=256, ch_out=256)
 
         # Điều chỉnh decoder path
         self.up5 = Up(512, 256, 256, attn=True)  # Giảm channels
